@@ -45,6 +45,17 @@ scrape_configs:
       - targets: [ cv-whisper:5001 ]
     relabel_configs: *probe-relabel
 
+  # the site the way a visitor reaches it: the public address, the router, nginx for Windows (PROXY protocol),
+  # cv-ui with its certificate (probe_ssl_earliest_cert_expiry). Alloy drops these requests from the logs of cv-ui
+  - job_name: probe-site
+    scrape_interval: 1m
+    metrics_path: /probe
+    params:
+      module: [ http_2xx ]
+    static_configs:
+      - targets: [ https://gaile.ee/ ]
+    relabel_configs: *probe-relabel
+
   - job_name: cadvisor
     scrape_interval: 15s
     static_configs:

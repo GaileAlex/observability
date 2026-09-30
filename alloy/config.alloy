@@ -47,6 +47,22 @@ loki.source.docker "containers" {
   forward_to    = [loki.process.containers.receiver]
 }
 
+// nginx for Windows in front of cv-ui runs on the host, not in Docker: its error log is mounted
+// (docker-compose.yml, WINDOWS_NGINX_LOGS) and gets the labels of a container, so the dashboards and alerts see it
+local.file_match "windows_nginx" {
+  path_targets = [{
+    __path__  = "/var/log/windows-nginx/error.log",
+    container = "windows-nginx",
+    project   = "cv",
+    service   = "windows-proxy",
+  }]
+}
+
+loki.source.file "windows_nginx" {
+  targets    = local.file_match.windows_nginx.targets
+  forward_to = [loki.process.containers.receiver]
+}
+
 loki.process "containers" {
   // colors of the terminal (Kokoro, RabbitMQ)
   stage.replace {
@@ -54,8 +70,9 @@ loki.process "containers" {
     replace    = ""
   }
 
-  // Spring Boot: "2026-09-30T09:36:52.964+03:00  INFO 1 --- [whisper] [scheduling-2] e.g.s.c.p.SpeechAnalysisService : ..."
-  // (the application name in brackets is optional); the lines of a stack trace belong to the line before them
+  // Spring Boot: "2026-09-30T09:36:52.964+03:00  INFO 1 --- [whisper] [scheduling-2] [<traceId>-<spanId>] e.g.s.c.p.SpeechAnalysisService : ..."
+  // (the application name is optional; [traceId-spanId] is there with Micrometer Tracing, blank outside a request
+  // or a task); the lines of a stack trace belong to the line before them
   stage.match {
     selector = `{container=~"cv-app|cv-whisper-app|estonian-tts-spring-app-1"}`
 
@@ -65,11 +82,45 @@ loki.process "containers" {
       max_lines     = 300
     }
     stage.regex {
-      expression = `^\S+\s+(?P<level>[A-Z]+)\s+\d+\s+---\s+(?:\[[^\]]*\]\s+)?\[[^\]]*\]\s+(?P<logger>\S+)\s+:`
+      expression = `^\S+\s+(?P<level>[A-Z]+)\s+\d+\s+---\s+(?:\[[^\]]*\]\s+){1,2}?(?:\[(?:(?P<trace_id>[0-9a-f]{32})-[0-9a-f]{16}|\s*)\]\s+)?(?P<logger>\S+)\s+:`
     }
-    // e.g. access-accounting-log, error-log: {container="cv-app"} | logger="error-log"
+    // e.g. access-accounting-log, error-log: {container="cv-app"} | logger="error-log";
+    // all the lines of one request in every application: {project=~".+"} | trace_id="..."
     stage.structured_metadata {
-      values = { logger = "" }
+      values = { logger = "", trace_id = "" }
+    }
+  }
+
+  // PostgreSQL: a statement of a slow query goes on over several lines
+  stage.match {
+    selector = `{container=~"cv-postgres|cv-dev"}`
+
+    stage.multiline {
+      firstline     = `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ \S+ \[\d+\]`
+      max_wait_time = "3s"
+      max_lines     = 100
+    }
+  }
+
+  // nginx for Windows in front of cv-ui (etc/windows-proxy of CV): its error log, a file of the Windows host.
+  // Its own time: the first start reads the whole file, the lines must not all get the time of the reading
+  stage.match {
+    selector = `{container="windows-nginx"}`
+
+    stage.replace {
+      expression = `(\r)$`
+      replace    = ""
+    }
+    stage.regex {
+      expression = `^(?P<time>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) `
+    }
+    stage.timestamp {
+      source   = "time"
+      format   = "2006/01/02 15:04:05"
+      location = "Europe/Tallinn"
+    }
+    stage.label_drop {
+      values = [ "filename" ]
     }
   }
 
@@ -129,6 +180,42 @@ loki.process "containers" {
     }
   }
 
+  // PostgreSQL: a statement slower than log_min_duration_statement, a wait for a lock, a sort on disk
+  // (docker-compose.yml of CV) come as LOG, they are warnings; duration_ms: {container="cv-postgres"} | duration_ms > 2000
+  stage.match {
+    selector = `{container=~"cv-postgres|cv-dev"}`
+
+    stage.regex {
+      expression = `LOG:  (?P<pg_slow>duration: (?P<duration_ms>[\d.]+) ms|process \d+ (?:still waiting|acquired)|temporary file:)`
+    }
+    // a stop of the container closes every connection with a FATAL line: a restart, not an error
+    // (container-restarts and service-down tell about it)
+    stage.regex {
+      expression = `(?P<pg_shutdown>FATAL:  terminating connection due to administrator command)`
+    }
+    stage.template {
+      source   = "level"
+      template = `{{ if or .pg_slow .pg_shutdown }}warn{{ else }}{{ .Value }}{{ end }}`
+    }
+    stage.structured_metadata {
+      values = { duration_ms = "" }
+    }
+  }
+
+  // nginx for Windows: a visitor that closed the connection (10053, 10054) is no error;
+  // "10061: ... actively refused" means cv-ui does not run and stays an error
+  stage.match {
+    selector = `{container="windows-nginx"}`
+
+    stage.regex {
+      expression = `(?P<client_gone>\(1005[34]: )`
+    }
+    stage.template {
+      source   = "level"
+      template = `{{ if .client_gone }}info{{ else }}{{ .Value }}{{ end }}`
+    }
+  }
+
   stage.template {
     source   = "level"
     template = `{{ if .Value }}{{ $l := ToLower .Value }}{{ if eq $l "warn" "warning" }}warn{{ else if eq $l "error" "err" "crit" "critical" "fatal" "panic" "alert" "emerg" }}error{{ else if eq $l "debug" "trace" }}debug{{ else }}info{{ end }}{{ end }}`
@@ -148,10 +235,19 @@ loki.process "containers" {
     expression          = `^(?:slot|srv)\s`
     drop_counter_reason = "ollama_slots"
   }
-  // the availability probes of Prometheus (blackbox exporter) every 30 s: Kokoro /health, Ollama /api/version
+  // the availability probes of Prometheus (blackbox exporter): Kokoro /health, Ollama /api/version, the site
   stage.drop {
-    expression          = `"GET /health HTTP/1\.1" 200|\| 200 \|.*\| GET\s+"/api/version"`
+    expression          = `"GET /health HTTP/1\.1" 200|\| 200 \|.*\| GET\s+"/api/version"|"Blackbox Exporter/[^"]*"`
     drop_counter_reason = "probes"
+  }
+  // Loki cancels the queries Grafana no longer waits for (a refreshed or closed dashboard) and reports each at error
+  stage.match {
+    selector = `{container="obs-loki"}`
+
+    stage.drop {
+      expression          = `context canceled|code = Canceled|about finished query" err=EOF`
+      drop_counter_reason = "loki_canceled_queries"
+    }
   }
   // PostgreSQL: two lines about a checkpoint every five minutes
   stage.drop {

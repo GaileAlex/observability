@@ -184,12 +184,20 @@ const overview = dashboard({
     panels: [
         stat({
             title: 'Сервисы',
-            description: 'Spring-приложения и RabbitMQ — отдают ли метрики (up); Kokoro, Whisper-сервис и Ollama — отвечают ли на проверку blackbox exporter (probe_success)',
-            gridPos: { x: 0, y: 0, w: 24, h: 3 },
+            description: 'Spring-приложения и RabbitMQ — отдают ли метрики (up); Kokoro, Whisper-сервис, Ollama и сам сайт gaile.ee (как его открывает посетитель: роутер, nginx для Windows, cv-ui) — отвечают ли на проверку blackbox exporter (probe_success)',
+            gridPos: { x: 0, y: 0, w: 20, h: 3 },
             targets: [prom('sort(up{job=~"spring|rabbitmq"} or probe_success)', '{{instance}}', { instant: true, range: false })],
             graph: false,
             mappings: [{ type: 'value', options: { '0': { text: 'не отвечает', index: 0 }, '1': { text: 'работает', index: 1 } } }],
             thresholds: { mode: 'absolute', steps: [{ color: STATUS.critical, value: null }, { color: STATUS.good, value: 1 }] },
+        }),
+        stat({
+            title: 'Сертификат gaile.ee',
+            description: 'Сколько дней до окончания сертификата сайта (cv-ui, /etc/nginx/certs). Алерт — меньше 14 дней',
+            gridPos: { x: 20, y: 0, w: 4, h: 3 },
+            targets: [prom('(probe_ssl_earliest_cert_expiry{job="probe-site"} - time()) / 86400', 'дней', { instant: true, range: false })],
+            unit: 'suffix: дн.', decimals: 0, graph: false,
+            thresholds: { mode: 'absolute', steps: [{ color: STATUS.critical, value: null }, { color: STATUS.warning, value: 14 }, { color: STATUS.good, value: 30 }] },
         }),
         stat({
             title: 'Запросы к API в минуту',
@@ -422,6 +430,12 @@ const logsDashboard = dashboard({
             current: { selected: false, text: '', value: '' },
             options: [{ selected: true, text: '', value: '' }],
         },
+        {
+            name: 'trace', label: 'traceId', type: 'textbox', query: '',
+            description: 'traceId из строки Spring-приложения ([traceId-spanId] после имени потока): панель внизу покажет все строки этого запроса во всех приложениях, любого уровня',
+            current: { selected: false, text: '', value: '' },
+            options: [{ selected: true, text: '', value: '' }],
+        },
     ],
     panels: [
         timeseries({
@@ -446,6 +460,25 @@ const logsDashboard = dashboard({
             description: 'rt — секунды от первого байта запроса до записи в лог, len — принятые байты (с телом): у 408 видно, сколько загрузки дошло',
             expr: '{container="cv-ui"} | rt > 2',
             gridPos: { x: 12, y: 24, w: 12, h: 10 },
+        }),
+        logs({
+            title: 'Ошибки скриптов в браузерах посетителей (client-error-log)',
+            description: 'Frontend отправляет ошибки своих скриптов в cv-app (ClientErrorHandler → ClientErrorLog): страница, адрес, браузер, сообщение и стек',
+            expr: '{container="cv-app"} | logger="client-error-log"',
+            gridPos: { x: 0, y: 34, w: 12, h: 10 },
+        }),
+        logs({
+            title: 'PostgreSQL: медленные запросы, блокировки, ошибки',
+            description: 'Запросы дольше 500 мс (duration_ms), ожидание блокировки дольше секунды, сортировка на диске — настройки в docker-compose.yml CV',
+            expr: '{container="cv-postgres", level=~"warn|error"}',
+            gridPos: { x: 12, y: 34, w: 12, h: 10 },
+        }),
+        logs({
+            title: 'Все строки одного запроса (traceId)',
+            description: 'Введите traceId вверху. Строки cv-app, Whisper и Estonian TTS с этим traceId — входящий запрос, вызовы LLM, фоновые задачи, которые он запустил',
+            // an empty $trace matches only an empty trace_id, which the second filter drops: nothing is shown
+            expr: '{container=~".+"} | trace_id=~"$trace" | trace_id!=""',
+            gridPos: { x: 0, y: 44, w: 24, h: 12 },
         }),
     ],
 });

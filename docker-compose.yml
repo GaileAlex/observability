@@ -39,6 +39,8 @@ services:
       # the positions in the logs of the containers: after a restart Alloy goes on where it stopped
       - alloy-data:/var/lib/alloy/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # the error log of nginx for Windows in front of cv-ui (it runs on the host, not in Docker)
+      - ${WINDOWS_NGINX_LOGS:-C:/nginx/logs}:/var/log/windows-nginx:ro
     # the pipelines of the logs, live: http://127.0.0.1:12345
     ports:
       - "127.0.0.1:12345:12345"

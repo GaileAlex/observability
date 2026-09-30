@@ -1,5 +1,5 @@
-# Availability of the services without their own metrics (Kokoro, the Whisper service, Ollama):
-# Prometheus asks the exporter to probe them (prometheus.yml, job probe) and gets probe_success 0/1
+# Availability of the services without their own metrics (Kokoro, the Whisper service, Ollama) and of the site:
+# Prometheus asks the exporter to probe them (prometheus.yml, jobs probe-*) and gets probe_success 0/1
 modules:
   http_2xx:
     prober: http

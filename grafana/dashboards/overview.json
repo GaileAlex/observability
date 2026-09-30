@@ -46,11 +46,11 @@
       "type": "stat",
       "id": 1,
       "title": "Сервисы",
-      "description": "Spring-приложения и RabbitMQ — отдают ли метрики (up); Kokoro, Whisper-сервис и Ollama — отвечают ли на проверку blackbox exporter (probe_success)",
+      "description": "Spring-приложения и RabbitMQ — отдают ли метрики (up); Kokoro, Whisper-сервис, Ollama и сам сайт gaile.ee (как его открывает посетитель: роутер, nginx для Windows, cv-ui) — отвечают ли на проверку blackbox exporter (probe_success)",
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 24,
+        "w": 20,
         "h": 3
       },
       "datasource": {
@@ -126,6 +126,78 @@
     {
       "type": "stat",
       "id": 2,
+      "title": "Сертификат gaile.ee",
+      "description": "Сколько дней до окончания сертификата сайта (cv-ui, /etc/nginx/certs). Алерт — меньше 14 дней",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(probe_ssl_earliest_cert_expiry{job=\"probe-site\"} - time()) / 86400",
+          "legendFormat": "дней",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: дн.",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 14
+              },
+              {
+                "color": "#0ca30c",
+                "value": 30
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "showPercentChange": false,
+        "wideLayout": true
+      }
+    },
+    {
+      "type": "stat",
+      "id": 3,
       "title": "Запросы к API в минуту",
       "gridPos": {
         "x": 0,
@@ -188,7 +260,7 @@
     },
     {
       "type": "stat",
-      "id": 3,
+      "id": 4,
       "title": "p95 ответа API",
       "description": "95% запросов к cv-app быстрее этого времени (за 5 минут). Ответы чата ждут LLM, поэтому p95 бывает в секундах",
       "gridPos": {
@@ -252,7 +324,7 @@
     },
     {
       "type": "stat",
-      "id": 4,
+      "id": 5,
       "title": "Ответы 5xx за час",
       "description": "Все Spring-приложения",
       "gridPos": {
@@ -319,7 +391,7 @@
     },
     {
       "type": "stat",
-      "id": 5,
+      "id": 6,
       "title": "Ошибки в логах за час",
       "description": "Строки с уровнем error во всех контейнерах, кроме самого мониторинга (контейнеры obs-*)",
       "gridPos": {
@@ -386,7 +458,7 @@
     },
     {
       "type": "stat",
-      "id": 6,
+      "id": 7,
       "title": "Загрузка GPU",
       "gridPos": {
         "x": 16,
@@ -449,7 +521,7 @@
     },
     {
       "type": "stat",
-      "id": 7,
+      "id": 8,
       "title": "Память GPU занята",
       "description": "Когда память кончается, Ollama выгружает слои модели на CPU и отвечает в разы медленнее",
       "gridPos": {
@@ -520,7 +592,7 @@
     },
     {
       "type": "row",
-      "id": 8,
+      "id": 9,
       "title": "API сайта (cv-app)",
       "collapsed": false,
       "panels": [],
@@ -533,7 +605,7 @@
     },
     {
       "type": "timeseries",
-      "id": 9,
+      "id": 10,
       "title": "Запросы в минуту по результату",
       "gridPos": {
         "x": 0,
@@ -673,7 +745,7 @@
     },
     {
       "type": "timeseries",
-      "id": 10,
+      "id": 11,
       "title": "Время ответа API",
       "gridPos": {
         "x": 12,
@@ -777,7 +849,7 @@
     },
     {
       "type": "table",
-      "id": 11,
+      "id": 12,
       "title": "Эндпоинты за выбранный период",
       "description": "Сколько раз вызывали, 95-й процентиль времени и число ответов 5xx",
       "gridPos": {
@@ -943,7 +1015,7 @@
     },
     {
       "type": "row",
-      "id": 12,
+      "id": 13,
       "title": "LLM, Whisper, TTS — вызовы из cv-app",
       "collapsed": false,
       "panels": [],
@@ -956,7 +1028,7 @@
     },
     {
       "type": "timeseries",
-      "id": 13,
+      "id": 14,
       "title": "Вызовы в минуту",
       "description": "Облачная и локальная LLM стартуют параллельно, если облако не ответило за ollama.cloud.fallback-delay-ms: проигравший вызов прерывается",
       "gridPos": {
@@ -1135,7 +1207,7 @@
     },
     {
       "type": "timeseries",
-      "id": 14,
+      "id": 15,
       "title": "Время ответа, p95 (успешные вызовы)",
       "gridPos": {
         "x": 12,
@@ -1313,7 +1385,7 @@
     },
     {
       "type": "bargauge",
-      "id": 15,
+      "id": 16,
       "title": "Вызовы LLM за период по результату",
       "description": "SUCCESS — ответ получен; UNKNOWN — вызов прерван (ответил другой) или сорвался; CLIENT/SERVER_ERROR — ответ с ошибкой",
       "gridPos": {
@@ -1371,7 +1443,7 @@
     },
     {
       "type": "timeseries",
-      "id": 16,
+      "id": 17,
       "title": "Фоновые задачи: среднее время выполнения",
       "description": "@Scheduled-задачи всех Spring-приложений: анализ беглости, проверка прокси, базы IP и т. д.",
       "gridPos": {
@@ -1435,7 +1507,7 @@
     },
     {
       "type": "row",
-      "id": 17,
+      "id": 18,
       "title": "Ресурсы",
       "collapsed": false,
       "panels": [],
@@ -1448,7 +1520,7 @@
     },
     {
       "type": "timeseries",
-      "id": 18,
+      "id": 19,
       "title": "GPU: загрузка",
       "gridPos": {
         "x": 0,
@@ -1528,7 +1600,7 @@
     },
     {
       "type": "timeseries",
-      "id": 19,
+      "id": 20,
       "title": "GPU: память",
       "gridPos": {
         "x": 8,
@@ -1640,7 +1712,7 @@
     },
     {
       "type": "timeseries",
-      "id": 20,
+      "id": 21,
       "title": "GPU: температура",
       "gridPos": {
         "x": 16,
@@ -1719,7 +1791,7 @@
     },
     {
       "type": "timeseries",
-      "id": 21,
+      "id": 22,
       "title": "CPU контейнеров (ядра), 8 самых загруженных",
       "gridPos": {
         "x": 0,
@@ -1783,7 +1855,7 @@
     },
     {
       "type": "bargauge",
-      "id": 22,
+      "id": 23,
       "title": "Память контейнеров сейчас",
       "gridPos": {
         "x": 12,
@@ -1839,7 +1911,7 @@
     },
     {
       "type": "row",
-      "id": 23,
+      "id": 24,
       "title": "Логи",
       "collapsed": false,
       "panels": [],
@@ -1852,7 +1924,7 @@
     },
     {
       "type": "timeseries",
-      "id": 24,
+      "id": 25,
       "title": "Ошибки в логах по контейнерам",
       "gridPos": {
         "x": 0,
@@ -1916,7 +1988,7 @@
     },
     {
       "type": "logs",
-      "id": 25,
+      "id": 26,
       "title": "Последние ошибки и предупреждения",
       "description": "Всё остальное — в дашборде «Логи»",
       "gridPos": {

@@ -14,7 +14,7 @@ All parts are free and self-hosted; nothing is sent outside, only Grafana is pub
 | Prometheus | 3.15 | metrics, kept 90 days |
 | cAdvisor | 0.60 | CPU and memory of the containers |
 | nvidia_gpu_exporter | 1.15 | load, memory, temperature of the GPU (nvidia-smi) |
-| blackbox exporter | 0.28 | is Kokoro / the Whisper service / Ollama answering |
+| blackbox exporter | 0.28 | is Kokoro / the Whisper service / Ollama / the site answering |
 
 ## Start
 
@@ -25,6 +25,9 @@ cp .env.example .env    # Grafana admin password, Gmail account for the alerts (
 docker compose up -d
 ```
 
+Alloy also reads the error log of nginx for Windows in front of cv-ui (`etc/windows-proxy` of CV), a folder of the
+host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
+
 - **Grafana**: http://127.0.0.1:3000 (user `admin`) - dashboards "обзор", "логи", "JVM" in the folder gaile.ee
 - **Prometheus**: http://127.0.0.1:9090/targets - what is scraped and whether it answers
 - **Alloy**: http://127.0.0.1:12345 - the pipelines of the logs
@@ -32,20 +35,30 @@ docker compose up -d
 ## What is collected
 
 - **Logs** (`alloy/config.alloy`): every container, with the labels `container`, `project`, `service`, `stream`,
-  `level` (error / warn / info). The level is parsed from the Spring Boot, nginx, Python, Go (logfmt), RabbitMQ and
-  PostgreSQL formats; a Java stack trace stays one entry. Debug lines, static files served by nginx, the probes and
-  other noise are dropped. Examples in Loki:
-  - `{container="cv-app"} | logger="access-accounting-log"` - logins, registrations
+  `level` (error / warn / info), and the error log of nginx for Windows as `container="windows-nginx"`. The level is
+  parsed from the Spring Boot, nginx, Python, Go (logfmt), RabbitMQ and PostgreSQL formats; a Java stack trace and
+  a multi-line SQL statement stay one entry. Debug lines, static files served by nginx, the probes and other noise
+  are dropped. The Spring applications write `[traceId-spanId]` into every line of a request: cv-app passes the
+  traceId to Whisper and the Estonian TTS, so one traceId finds the request in all of them. Examples in Loki:
+  - `{container="cv-app"} | logger="access-accounting-log"` - sign-ins (and wrong passwords), registrations,
+    password resets, articles and comments
+  - `{container="cv-app"} | logger="client-error-log"` - errors of the scripts in the browsers of the visitors
+  - `{container=~".+"} | trace_id="..."` - every line of one request (the dashboard "логи" has a field for it)
   - `{container="cv-ui"} | rt > 2` - requests to the site slower than 2 s
+  - `{container="cv-postgres"} | duration_ms > 1000` - SQL statements slower than 1 s (PostgreSQL logs those over
+    500 ms, see docker-compose.yml of CV)
   - `{level="error", container!~"obs-.*"}` - the errors of the applications
 - **Metrics** (`prometheus/prometheus.yml`): the Spring applications (cv-app, cv-whisper-app, estonian-tts-spring-app)
   expose `/actuator/prometheus` on the management port 8081, not published: HTTP requests with histograms,
   the calls of Ollama / Whisper / TTS made by cv-app (`http_client_requests` by host), JVM, Hikari, `@Scheduled`
   tasks. RabbitMQ of the Estonian TTS has its own plugin. Kokoro, the Whisper service and Ollama have no metrics
   of their own: the blackbox exporter checks that they answer, their load is seen from cv-app and cAdvisor.
-- **Alerts** (`grafana/provisioning/alerting`): a service does not answer, 5xx responses, many errors in the logs,
-  GPU memory almost full, a container restarting. Grafana reads these files only at start:
-  `docker compose restart grafana` after a change.
+  The blackbox exporter also opens https://gaile.ee the way a visitor does (the router, nginx for Windows, cv-ui)
+  and reads the date the certificate expires.
+- **Alerts** (`grafana/provisioning/alerting`): a service or the site does not answer, 5xx responses, many errors in
+  the logs, GPU memory almost full, a container restarting, the certificate expires in less than 14 days, password
+  guessing (more than 20 wrong passwords in 15 minutes), errors in the browsers of the visitors, no backup of the
+  database for a day. Grafana reads these files only at start: `docker compose restart grafana` after a change.
 
 ## Dashboards
 
