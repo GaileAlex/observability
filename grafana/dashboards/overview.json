@@ -321,7 +321,7 @@
       "type": "stat",
       "id": 5,
       "title": "Ошибки в логах за час",
-      "description": "Строки с уровнем error во всех контейнерах, кроме самого мониторинга (проект observability)",
+      "description": "Строки с уровнем error во всех контейнерах, кроме самого мониторинга (контейнеры obs-*)",
       "gridPos": {
         "x": 12,
         "y": 3,
@@ -339,7 +339,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({level=\"error\", project!=\"observability\"}[1h])) or vector(0)",
+          "expr": "sum(count_over_time({level=\"error\", container!~\"obs-.*\"}[1h])) or vector(0)",
           "legendFormat": "ошибок",
           "queryType": "instant"
         }
@@ -1871,7 +1871,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum by (container) (count_over_time({level=\"error\", project!=\"observability\"}[$__auto]))",
+          "expr": "sum by (container) (count_over_time({level=\"error\", container!~\"obs-.*\"}[$__auto]))",
           "legendFormat": "{{container}}",
           "queryType": "range"
         }
@@ -1936,7 +1936,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{level=~\"error|warn\", project!=\"observability\"}",
+          "expr": "{level=~\"error|warn\", container!~\"obs-.*\"}",
           "queryType": "range"
         }
       ],

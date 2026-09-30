@@ -37,7 +37,7 @@ docker compose up -d
   other noise are dropped. Examples in Loki:
   - `{container="cv-app"} | logger="access-accounting-log"` - logins, registrations
   - `{container="cv-ui"} | rt > 2` - requests to the site slower than 2 s
-  - `{level="error", project!="observability"}` - the errors of the applications
+  - `{level="error", container!~"obs-.*"}` - the errors of the applications
 - **Metrics** (`prometheus/prometheus.yml`): the Spring applications (cv-app, cv-whisper-app, estonian-tts-spring-app)
   expose `/actuator/prometheus` on the management port 8081, not published: HTTP requests with histograms,
   the calls of Ollama / Whisper / TTS made by cv-app (`http_client_requests` by host), JVM, Hikari, `@Scheduled`

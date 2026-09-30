@@ -91,6 +91,32 @@
         ]
       },
       {
+        "name": "monitoring",
+        "label": "Мониторинг",
+        "type": "custom",
+        "description": "Строки самих Grafana, Loki, Alloy, Prometheus: их запуск и остановка к приложениям не относятся",
+        "query": "скрыть : obs-.*,показать : -",
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "selected": true,
+          "text": "скрыть",
+          "value": "obs-.*"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "скрыть",
+            "value": "obs-.*"
+          },
+          {
+            "selected": false,
+            "text": "показать",
+            "value": "-"
+          }
+        ]
+      },
+      {
         "name": "search",
         "label": "Текст (regex)",
         "type": "textbox",
@@ -155,7 +181,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum by (level) (count_over_time({container=~\"$container\", level=~\"$level\"} |~ \"(?i)$search\" [$__auto]))",
+          "expr": "sum by (level) (count_over_time({container=~\"$container\", level=~\"$level\", container!~\"$monitoring\"} |~ \"(?i)$search\" [$__auto]))",
           "legendFormat": "{{level}}",
           "queryType": "range"
         }
@@ -265,7 +291,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{container=~\"$container\", level=~\"$level\"} |~ \"(?i)$search\"",
+          "expr": "{container=~\"$container\", level=~\"$level\", container!~\"$monitoring\"} |~ \"(?i)$search\"",
           "queryType": "range"
         }
       ],

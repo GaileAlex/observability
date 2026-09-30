@@ -214,9 +214,9 @@ const overview = dashboard({
         }),
         stat({
             title: 'Ошибки в логах за час',
-            description: 'Строки с уровнем error во всех контейнерах, кроме самого мониторинга (проект observability)',
+            description: 'Строки с уровнем error во всех контейнерах, кроме самого мониторинга (контейнеры obs-*)',
             gridPos: { x: 12, y: 3, w: 4, h: 4 },
-            targets: [loki('sum(count_over_time({level="error", project!="observability"}[1h])) or vector(0)', 'ошибок', { queryType: 'instant' })],
+            targets: [loki('sum(count_over_time({level="error", container!~"obs-.*"}[1h])) or vector(0)', 'ошибок', { queryType: 'instant' })],
             unit: 'short', decimals: 0, graph: false,
             thresholds: { mode: 'absolute', steps: [{ color: 'text', value: null }, { color: STATUS.critical, value: 1 }] },
         }),
@@ -363,13 +363,13 @@ const overview = dashboard({
         timeseries({
             title: 'Ошибки в логах по контейнерам',
             gridPos: { x: 0, y: 61, w: 24, h: 7 },
-            targets: [loki('sum by (container) (count_over_time({level="error", project!="observability"}[$__auto]))', '{{container}}')],
+            targets: [loki('sum by (container) (count_over_time({level="error", container!~"obs-.*"}[$__auto]))', '{{container}}')],
             unit: 'short', bars: true, stack: true, decimals: 0,
         }),
         logs({
             title: 'Последние ошибки и предупреждения',
             description: 'Всё остальное — в дашборде «Логи»',
-            expr: '{level=~"error|warn", project!="observability"}',
+            expr: '{level=~"error|warn", container!~"obs-.*"}',
             gridPos: { x: 0, y: 68, w: 24, h: 12 },
         }),
     ],
@@ -377,7 +377,8 @@ const overview = dashboard({
 
 // ---------------------------------------------------------------- logs
 nextId = 1;
-const SELECTOR = '{container=~"$container", level=~"$level"} |~ "(?i)$search"';
+// $monitoring is "obs-.*" (the own lines of this stack, all its containers are obs-*, hidden) or "-" (no container has this name: all shown)
+const SELECTOR = '{container=~"$container", level=~"$level", container!~"$monitoring"} |~ "(?i)$search"';
 const logsDashboard = dashboard({
     uid: 'gaile-logs',
     title: 'gaile.ee — логи',
@@ -403,6 +404,17 @@ const logsDashboard = dashboard({
                 { selected: true, text: 'error', value: 'error' },
                 { selected: true, text: 'warn', value: 'warn' },
                 { selected: false, text: 'info', value: 'info' },
+            ],
+        },
+        {
+            name: 'monitoring', label: 'Мониторинг', type: 'custom',
+            description: 'Строки самих Grafana, Loki, Alloy, Prometheus: их запуск и остановка к приложениям не относятся',
+            query: 'скрыть : obs-.*,показать : -',
+            includeAll: false, multi: false,
+            current: { selected: true, text: 'скрыть', value: 'obs-.*' },
+            options: [
+                { selected: true, text: 'скрыть', value: 'obs-.*' },
+                { selected: false, text: 'показать', value: '-' },
             ],
         },
         {
