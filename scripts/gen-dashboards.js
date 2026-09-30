@@ -45,6 +45,13 @@ const CLIENTS = [
 ];
 const CLIENT_OVERRIDES = CLIENTS.map(([host, name], i) => seriesOverride(host, SLOT[i], name));
 
+// the probes of the way out (instance of the jobs probe-internet and probe-site); ollama.com keeps its color of CLIENTS
+const NET_OVERRIDES = [
+    seriesOverride('ollama.com', SLOT[0], 'ollama.com (интернет и DNS)'),
+    seriesOverride('1.1.1.1', SLOT[2], '1.1.1.1 (интернет)'),
+    seriesOverride('gaile.ee', SLOT[6], 'gaile.ee через роутер'),
+];
+
 // the queries shown on more than one dashboard (the dashboard "медленные запросы" gathers them)
 const CLIENT_P95 = 'histogram_quantile(0.95, sum by (client_name, le) (rate(http_client_requests_seconds_bucket{application="cv", outcome="SUCCESS"}[5m])))';
 const SCHEDULED_AVG = 'sum by (code_function) (rate(tasks_scheduled_execution_seconds_sum[15m])) / sum by (code_function) (rate(tasks_scheduled_execution_seconds_count[15m]))';
@@ -200,7 +207,7 @@ const overview = dashboard({
             title: 'Сервисы',
             description: 'Spring-приложения и RabbitMQ — отдают ли метрики (up); Kokoro, Whisper-сервис, Ollama и сам сайт gaile.ee (как его открывает посетитель: роутер, nginx для Windows, cv-ui) — отвечают ли на проверку blackbox exporter (probe_success)',
             gridPos: { x: 0, y: 0, w: 20, h: 3 },
-            targets: [prom('sort(up{job=~"spring|rabbitmq"} or probe_success)', '{{instance}}', { instant: true, range: false })],
+            targets: [prom('sort(up{job=~"spring|rabbitmq"} or probe_success{job!="probe-internet"})', '{{instance}}', { instant: true, range: false })],
             graph: false,
             mappings: [{ type: 'value', options: { '0': { text: 'не отвечает', index: 0 }, '1': { text: 'работает', index: 1 } } }],
             thresholds: { mode: 'absolute', steps: [{ color: STATUS.critical, value: null }, { color: STATUS.good, value: 1 }] },
@@ -342,16 +349,32 @@ const overview = dashboard({
             unit: 's',
         }),
 
-        row('Ресурсы', 42),
+        row('Выход в интернет', 42),
+        timeseries({
+            title: 'Подключение наружу: время',
+            description: 'Соединение с 1.1.1.1 и ollama.com из контейнера (раз в 15 с) и открытие https://gaile.ee через роутер (раз в минуту), худшее значение за точку. Потерянный пакет — подключение за 1 или 3 с, неудачная проверка — около 9.5 с. Растут все линии — пакеты теряет канал хоста (Wi-Fi, роутер, провайдер); только gaile.ee — обратный путь через роутер. Отметки — начало и конец проверки прокси',
+            gridPos: { x: 0, y: 43, w: 12, h: 8 },
+            targets: [prom('max_over_time(probe_duration_seconds{job=~"probe-internet|probe-site"}[$__rate_interval])', '{{instance}}')],
+            unit: 's', overrides: NET_OVERRIDES,
+        }),
+        timeseries({
+            title: 'Подключение наружу: неудачные проверки',
+            description: 'Доля неудачных проверок за точку графика. Отметки — начало и конец проверки прокси',
+            gridPos: { x: 12, y: 43, w: 12, h: 8 },
+            targets: [prom('1 - avg_over_time(probe_success{job=~"probe-internet|probe-site"}[$__rate_interval])', '{{instance}}')],
+            unit: 'percentunit', max: 1, overrides: NET_OVERRIDES,
+        }),
+
+        row('Ресурсы', 51),
         timeseries({
             title: 'GPU: загрузка',
-            gridPos: { x: 0, y: 43, w: 8, h: 8 },
+            gridPos: { x: 0, y: 52, w: 8, h: 8 },
             targets: [prom('avg(nvidia_smi_utilization_gpu_ratio)', 'загрузка')],
             unit: 'percentunit', max: 1, overrides: [seriesOverride('загрузка', SLOT[0])],
         }),
         timeseries({
             title: 'GPU: память',
-            gridPos: { x: 8, y: 43, w: 8, h: 8 },
+            gridPos: { x: 8, y: 52, w: 8, h: 8 },
             targets: [
                 prom('sum(nvidia_smi_memory_used_bytes)', 'занято'),
                 prom('sum(nvidia_smi_memory_total_bytes)', 'всего'),
@@ -364,27 +387,27 @@ const overview = dashboard({
         }),
         timeseries({
             title: 'GPU: температура',
-            gridPos: { x: 16, y: 43, w: 8, h: 8 },
+            gridPos: { x: 16, y: 52, w: 8, h: 8 },
             targets: [prom('max(nvidia_smi_temperature_gpu)', 'температура')],
             unit: 'celsius', min: undefined, overrides: [seriesOverride('температура', SLOT[1])],
         }),
         timeseries({
             title: 'CPU контейнеров (ядра), 8 самых загруженных',
-            gridPos: { x: 0, y: 51, w: 12, h: 9 },
+            gridPos: { x: 0, y: 60, w: 12, h: 9 },
             targets: [prom(CONTAINER_CPU_TOP8, '{{name}}')],
             unit: 'short', decimals: 2,
         }),
         barGauge({
             title: 'Память контейнеров сейчас',
-            gridPos: { x: 12, y: 51, w: 12, h: 9 },
+            gridPos: { x: 12, y: 60, w: 12, h: 9 },
             targets: [prom('sort_desc(sum by (name) (container_memory_working_set_bytes))', '{{name}}', { instant: true, range: false })],
             unit: 'bytes',
         }),
 
-        row('Логи', 60),
+        row('Логи', 69),
         timeseries({
             title: 'Ошибки в логах по контейнерам',
-            gridPos: { x: 0, y: 61, w: 24, h: 7 },
+            gridPos: { x: 0, y: 70, w: 24, h: 7 },
             targets: [loki('sum by (container) (count_over_time({level="error", container!~"obs-.*"}[$__auto]))', '{{container}}')],
             unit: 'short', bars: true, stack: true, decimals: 0,
         }),
@@ -392,9 +415,21 @@ const overview = dashboard({
             title: 'Последние ошибки и предупреждения',
             description: 'Всё остальное — в дашборде «Логи»',
             expr: '{level=~"error|warn", container!~"obs-.*"}',
-            gridPos: { x: 0, y: 68, w: 24, h: 12 },
+            gridPos: { x: 0, y: 77, w: 24, h: 12 },
         }),
     ],
+});
+// the connections of a proxy check go out through the same uplink: its start and end on the graphs of the way out
+overview.annotations.list.push({
+    name: 'Проверка прокси',
+    datasource: LOKI,
+    enable: true,
+    iconColor: SLOT[4],
+    target: {
+        refId: 'Anno', queryType: 'range',
+        expr: '{container="cv-app"} |~ `Proxies for check|Checking all proxies finished` | line_format `{{ if contains "finished" __line__ }}Проверка прокси закончилась{{ else }}Проверка прокси началась{{ end }}`',
+    },
+    filter: { exclude: false, ids: overview.panels.filter((p) => p.title.startsWith('Подключение наружу')).map((p) => p.id) },
 });
 
 // ---------------------------------------------------------------- logs
