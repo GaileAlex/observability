@@ -39,6 +39,12 @@
       "type": "link",
       "url": "/d/gaile-jvm",
       "icon": "dashboard"
+    },
+    {
+      "title": "Медленные запросы",
+      "type": "link",
+      "url": "/d/gaile-slow",
+      "icon": "bolt"
     }
   ],
   "panels": [

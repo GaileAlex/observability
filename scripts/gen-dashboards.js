@@ -45,6 +45,19 @@ const CLIENTS = [
 ];
 const CLIENT_OVERRIDES = CLIENTS.map(([host, name], i) => seriesOverride(host, SLOT[i], name));
 
+// the queries shown on more than one dashboard (the dashboard "медленные запросы" gathers them)
+const CLIENT_P95 = 'histogram_quantile(0.95, sum by (client_name, le) (rate(http_client_requests_seconds_bucket{application="cv", outcome="SUCCESS"}[5m])))';
+const SCHEDULED_AVG = 'sum by (code_function) (rate(tasks_scheduled_execution_seconds_sum[15m])) / sum by (code_function) (rate(tasks_scheduled_execution_seconds_count[15m]))';
+const CONTAINER_CPU_TOP8 = 'sum by (name) (rate(container_cpu_usage_seconds_total[5m])) and on (name) topk(8, avg_over_time(sum by (name) (rate(container_cpu_usage_seconds_total[5m]))[$__range:1m]))';
+const NGINX_SLOW = '{container="cv-ui"} | rt > 2';
+const POSTGRES_SLOW = '{container="cv-postgres", level=~"warn|error"}';
+const hikariTargets = (app) => [
+    prom(`sum(hikaricp_connections_active{${app}})`, 'заняты'),
+    prom(`sum(hikaricp_connections_idle{${app}})`, 'свободны'),
+    prom(`sum(hikaricp_connections_pending{${app}})`, 'ждут'),
+];
+const HIKARI_OVERRIDES = [seriesOverride('заняты', SLOT[0]), seriesOverride('свободны', SLOT[2]), seriesOverride('ждут', STATUS.critical)];
+
 function row(title, y) {
     return { type: 'row', id: nextId++, title, collapsed: false, panels: [], gridPos: { x: 0, y, w: 24, h: 1 } };
 }
@@ -168,6 +181,7 @@ function dashboard({ uid, title, description, panels, templating = [], time = 'n
             { title: 'Обзор', type: 'link', url: '/d/gaile-overview', icon: 'dashboard' },
             { title: 'Логи', type: 'link', url: '/d/gaile-logs', icon: 'doc' },
             { title: 'JVM', type: 'link', url: '/d/gaile-jvm', icon: 'dashboard' },
+            { title: 'Медленные запросы', type: 'link', url: '/d/gaile-slow', icon: 'bolt' },
         ],
         panels,
     };
@@ -310,7 +324,7 @@ const overview = dashboard({
         timeseries({
             title: 'Время ответа, p95 (успешные вызовы)',
             gridPos: { x: 12, y: 26, w: 12, h: 8 },
-            targets: [prom('histogram_quantile(0.95, sum by (client_name, le) (rate(http_client_requests_seconds_bucket{application="cv", outcome="SUCCESS"}[5m])))', '{{client_name}}')],
+            targets: [prom(CLIENT_P95, '{{client_name}}')],
             unit: 's', overrides: CLIENT_OVERRIDES,
         }),
         barGauge({
@@ -324,7 +338,7 @@ const overview = dashboard({
             title: 'Фоновые задачи: среднее время выполнения',
             description: '@Scheduled-задачи всех Spring-приложений: анализ беглости, проверка прокси, базы IP и т. д.',
             gridPos: { x: 12, y: 34, w: 12, h: 8 },
-            targets: [prom('sum by (code_function) (rate(tasks_scheduled_execution_seconds_sum[15m])) / sum by (code_function) (rate(tasks_scheduled_execution_seconds_count[15m]))', '{{code_function}}')],
+            targets: [prom(SCHEDULED_AVG, '{{code_function}}')],
             unit: 's',
         }),
 
@@ -357,7 +371,7 @@ const overview = dashboard({
         timeseries({
             title: 'CPU контейнеров (ядра), 8 самых загруженных',
             gridPos: { x: 0, y: 51, w: 12, h: 9 },
-            targets: [prom('sum by (name) (rate(container_cpu_usage_seconds_total[5m])) and on (name) topk(8, avg_over_time(sum by (name) (rate(container_cpu_usage_seconds_total[5m]))[$__range:1m]))', '{{name}}')],
+            targets: [prom(CONTAINER_CPU_TOP8, '{{name}}')],
             unit: 'short', decimals: 2,
         }),
         barGauge({
@@ -458,7 +472,7 @@ const logsDashboard = dashboard({
         logs({
             title: 'Медленные запросы к сайту (nginx, дольше 2 с)',
             description: 'rt — секунды от первого байта запроса до записи в лог, len — принятые байты (с телом): у 408 видно, сколько загрузки дошло',
-            expr: '{container="cv-ui"} | rt > 2',
+            expr: NGINX_SLOW,
             gridPos: { x: 12, y: 24, w: 12, h: 10 },
         }),
         logs({
@@ -470,7 +484,7 @@ const logsDashboard = dashboard({
         logs({
             title: 'PostgreSQL: медленные запросы, блокировки, ошибки',
             description: 'Запросы дольше 500 мс (duration_ms), ожидание блокировки дольше секунды, сортировка на диске — настройки в docker-compose.yml CV',
-            expr: '{container="cv-postgres", level=~"warn|error"}',
+            expr: POSTGRES_SLOW,
             gridPos: { x: 12, y: 34, w: 12, h: 10 },
         }),
         logs({
@@ -541,13 +555,9 @@ const jvm = dashboard({
         timeseries({
             title: 'Пул соединений с БД (Hikari)', description: 'Только у приложений с базой (cv). pending > 0 — запросы ждут свободного соединения',
             gridPos: { x: 0, y: 20, w: 12, h: 8 },
-            targets: [
-                prom(`sum(hikaricp_connections_active{${APP}})`, 'заняты'),
-                prom(`sum(hikaricp_connections_idle{${APP}})`, 'свободны'),
-                prom(`sum(hikaricp_connections_pending{${APP}})`, 'ждут'),
-            ],
+            targets: hikariTargets(APP),
             unit: 'short', decimals: 0,
-            overrides: [seriesOverride('заняты', SLOT[0]), seriesOverride('свободны', SLOT[2]), seriesOverride('ждут', STATUS.critical)],
+            overrides: HIKARI_OVERRIDES,
         }),
         timeseries({
             title: 'Потоки по состоянию', gridPos: { x: 12, y: 20, w: 12, h: 8 },
@@ -557,7 +567,130 @@ const jvm = dashboard({
     ],
 });
 
-for (const [file, d] of [['overview.json', overview], ['logs.json', logsDashboard], ['jvm.json', jvm]]) {
+// ---------------------------------------------------------------- slow requests
+// everything that tells where a request loses its time, in the order it is looked at: the site and the endpoints,
+// the services cv-app waits for, the database, the shared resources
+nextId = 1;
+const SERVER = 'uri!~"/actuator.*"';
+const APPLICATION_OVERRIDES = [
+    seriesOverride('cv', SLOT[0], 'cv-app'),
+    seriesOverride('whisper', SLOT[2], 'Whisper'),
+    seriesOverride('estonian-tts', SLOT[4], 'TTS эстонский'),
+];
+const slow = dashboard({
+    uid: 'gaile-slow',
+    title: 'gaile.ee — медленные запросы',
+    description: 'Где запрос теряет время: эндпоинты, вызовы LLM/Whisper/TTS, база данных, GPU и CPU',
+    tags: ['gaile.ee'],
+    panels: [
+        row('Сайт и эндпоинты', 0),
+        timeseries({
+            title: 'Время ответа по приложениям, p95',
+            description: '95% запросов к приложению быстрее этого времени (за 5 минут). Whisper и эстонский TTS появляются после первого запроса к ним',
+            gridPos: { x: 0, y: 1, w: 12, h: 8 },
+            targets: [prom(`histogram_quantile(0.95, sum by (application, le) (rate(http_server_requests_seconds_bucket{${SERVER}}[5m])))`, '{{application}}')],
+            unit: 's', overrides: APPLICATION_OVERRIDES,
+        }),
+        logs({
+            title: 'Запросы к сайту дольше 2 с (nginx)',
+            description: 'Весь путь посетителя. rt — секунды от первого байта запроса до записи в лог, len — принятые байты (с телом)',
+            expr: NGINX_SLOW,
+            gridPos: { x: 12, y: 1, w: 12, h: 8 },
+        }),
+        {
+            type: 'table', id: nextId++, title: 'Самые медленные эндпоинты за выбранный период',
+            description: 'p95 и максимум времени ответа каждого эндпоинта всех Spring-приложений. Отсортировано по p95; нажмите на заголовок, чтобы сортировать иначе',
+            gridPos: { x: 0, y: 9, w: 24, h: 10 },
+            datasource: PROM,
+            targets: [
+                promInstant(`sum by (application, method, uri) (increase(http_server_requests_seconds_count{${SERVER}}[$__range]))`, 'A'),
+                promInstant(`histogram_quantile(0.95, sum by (application, method, uri, le) (increase(http_server_requests_seconds_bucket{${SERVER}}[$__range])))`, 'B'),
+                promInstant(`max by (application, method, uri) (max_over_time(http_server_requests_seconds_max{${SERVER}}[$__range]))`, 'C'),
+            ],
+            transformations: [
+                { id: 'merge', options: {} },
+                {
+                    id: 'organize',
+                    options: {
+                        excludeByName: { Time: true },
+                        indexByName: { application: 0, method: 1, uri: 2, 'Value #A': 3, 'Value #B': 4, 'Value #C': 5 },
+                        renameByName: { application: 'Приложение', method: 'Метод', uri: 'Эндпоинт', 'Value #A': 'Запросы', 'Value #B': 'p95', 'Value #C': 'Максимум' },
+                    },
+                },
+                { id: 'filterByValue', options: { type: 'exclude', match: 'all', filters: [{ fieldName: 'Запросы', config: { id: 'lower', options: { value: 0.5 } } }] } },
+            ],
+            fieldConfig: {
+                defaults: { custom: { align: 'auto', cellOptions: { type: 'auto' } } },
+                overrides: [
+                    { matcher: { id: 'byName', options: 'Запросы' }, properties: [{ id: 'decimals', value: 0 }] },
+                    { matcher: { id: 'byName', options: 'p95' }, properties: [{ id: 'unit', value: 's' }, { id: 'decimals', value: 2 }] },
+                    { matcher: { id: 'byName', options: 'Максимум' }, properties: [{ id: 'unit', value: 's' }, { id: 'decimals', value: 2 }] },
+                ],
+            },
+            options: { showHeader: true, cellHeight: 'sm', sortBy: [{ displayName: 'p95', desc: true }], footer: { show: false } },
+        },
+
+        row('Чего ждёт cv-app: LLM, Whisper, TTS, фоновые задачи', 19),
+        timeseries({
+            title: 'Время ответа сервисов, p95 (успешные вызовы)',
+            description: 'Если p95 эндпоинта растёт вместе с одной из этих линий, время уходит на этот сервис',
+            gridPos: { x: 0, y: 20, w: 12, h: 8 },
+            targets: [prom(CLIENT_P95, '{{client_name}}')],
+            unit: 's', overrides: CLIENT_OVERRIDES,
+        }),
+        timeseries({
+            title: 'Фоновые задачи: среднее время выполнения',
+            description: '@Scheduled-задачи всех Spring-приложений: анализ беглости, проверка прокси, базы IP и т. д.',
+            gridPos: { x: 12, y: 20, w: 12, h: 8 },
+            targets: [prom(SCHEDULED_AVG, '{{code_function}}')],
+            unit: 's',
+        }),
+
+        row('База данных', 28),
+        timeseries({
+            title: 'Пул соединений с БД (Hikari), cv-app',
+            description: 'ждут > 0 — запросы стоят в очереди за свободным соединением',
+            gridPos: { x: 0, y: 29, w: 12, h: 8 },
+            targets: hikariTargets('application="cv"'),
+            unit: 'short', decimals: 0,
+            overrides: HIKARI_OVERRIDES,
+        }),
+        logs({
+            title: 'PostgreSQL: медленные запросы, блокировки, ошибки',
+            description: 'Запросы дольше 500 мс (duration_ms), ожидание блокировки дольше секунды, сортировка на диске — настройки в docker-compose.yml CV',
+            expr: POSTGRES_SLOW,
+            gridPos: { x: 12, y: 29, w: 12, h: 8 },
+        }),
+
+        row('Общие ресурсы', 37),
+        timeseries({
+            title: 'GPU: загрузка и память',
+            description: 'GPU общий для Ollama, Whisper, Kokoro и эстонского TTS: при загрузке около 100 % запросы ждут друг друга, когда кончается память, Ollama переносит слои модели на CPU',
+            gridPos: { x: 0, y: 38, w: 8, h: 8 },
+            targets: [
+                prom('avg(nvidia_smi_utilization_gpu_ratio)', 'загрузка'),
+                prom('sum(nvidia_smi_memory_used_bytes) / sum(nvidia_smi_memory_total_bytes)', 'память'),
+            ],
+            unit: 'percentunit', max: 1,
+            overrides: [seriesOverride('загрузка', SLOT[0]), seriesOverride('память', SLOT[1])],
+        }),
+        timeseries({
+            title: 'CPU контейнеров (ядра), 8 самых загруженных',
+            gridPos: { x: 8, y: 38, w: 8, h: 8 },
+            targets: [prom(CONTAINER_CPU_TOP8, '{{name}}')],
+            unit: 'short', decimals: 2,
+        }),
+        timeseries({
+            title: 'Паузы GC (доля времени)',
+            description: 'Сколько времени приложение стоит на сборке мусора: заметная доля — не хватает heap (дашборд JVM)',
+            gridPos: { x: 16, y: 38, w: 8, h: 8 },
+            targets: [prom(`sum by (application) (rate(jvm_gc_pause_seconds_sum[5m]))`, '{{application}}')],
+            unit: 'percentunit', decimals: 2, overrides: APPLICATION_OVERRIDES,
+        }),
+    ],
+});
+
+for (const [file, d] of [['overview.json', overview], ['logs.json', logsDashboard], ['jvm.json', jvm], ['slow.json', slow]]) {
     fs.writeFileSync(path.join(OUT, file), JSON.stringify(d, null, 2) + '\n');
     console.log('written', file, d.panels.length, 'panels');
 }
