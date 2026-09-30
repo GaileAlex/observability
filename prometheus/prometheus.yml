@@ -56,6 +56,19 @@ scrape_configs:
       - targets: [ https://gaile.ee/ ]
     relabel_configs: *probe-relabel
 
+  # the way out to the Internet, without the hairpin of the router: probe-site failing while these answer means
+  # the path back through the router; both failing means the uplink (Wi-Fi, router, provider). Every 15 s: a burst
+  # of lost packets lasts seconds (a lost SYN shows as a connect of 1 or 3 s). ollama.com also needs DNS, as the
+  # cloud LLM calls of cv-app do
+  - job_name: probe-internet
+    scrape_interval: 15s
+    metrics_path: /probe
+    params:
+      module: [ tcp_connect ]
+    static_configs:
+      - targets: [ 1.1.1.1:443, ollama.com:443 ]
+    relabel_configs: *probe-relabel
+
   - job_name: cadvisor
     scrape_interval: 15s
     static_configs:

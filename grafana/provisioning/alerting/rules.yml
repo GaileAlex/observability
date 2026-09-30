@@ -21,8 +21,9 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              # the metrics of a probe job come from the blackbox exporter: probe_success tells about the service
-              expr: up{job!~"probe-.*"} or probe_success
+              # the metrics of a probe job come from the blackbox exporter: probe_success tells about the service.
+              # probe-internet is no service: a lost uplink already fails probe-site
+              expr: up{job!~"probe-.*"} or probe_success{job!="probe-internet"}
               instant: true
           - refId: B
             datasourceUid: __expr__

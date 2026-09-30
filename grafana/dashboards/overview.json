@@ -19,7 +19,29 @@
     "list": []
   },
   "annotations": {
-    "list": []
+    "list": [
+      {
+        "name": "Проверка прокси",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "enable": true,
+        "iconColor": "#d55181",
+        "target": {
+          "refId": "Anno",
+          "queryType": "range",
+          "expr": "{container=\"cv-app\"} |~ `Proxies for check|Checking all proxies finished` | line_format `{{ if contains \"finished\" __line__ }}Проверка прокси закончилась{{ else }}Проверка прокси началась{{ end }}`"
+        },
+        "filter": {
+          "exclude": false,
+          "ids": [
+            19,
+            20
+          ]
+        }
+      }
+    ]
   },
   "links": [
     {
@@ -70,7 +92,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sort(up{job=~\"spring|rabbitmq\"} or probe_success)",
+          "expr": "sort(up{job=~\"spring|rabbitmq\"} or probe_success{job!=\"probe-internet\"})",
           "legendFormat": "{{instance}}",
           "range": false,
           "instant": true
@@ -1514,7 +1536,7 @@
     {
       "type": "row",
       "id": 18,
-      "title": "Ресурсы",
+      "title": "Выход в интернет",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -1527,10 +1549,268 @@
     {
       "type": "timeseries",
       "id": 19,
-      "title": "GPU: загрузка",
+      "title": "Подключение наружу: время",
+      "description": "Соединение с 1.1.1.1 и ollama.com из контейнера (раз в 15 с) и открытие https://gaile.ee через роутер (раз в минуту), худшее значение за точку. Потерянный пакет — подключение за 1 или 3 с, неудачная проверка — около 9.5 с. Растут все линии — пакеты теряет канал хоста (Wi-Fi, роутер, провайдер); только gaile.ee — обратный путь через роутер. Отметки — начало и конец проверки прокси",
       "gridPos": {
         "x": 0,
         "y": 43,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max_over_time(probe_duration_seconds{job=~\"probe-internet|probe-site\"}[$__rate_interval])",
+          "legendFormat": "{{instance}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 6,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "lineInterpolation": "linear",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ollama.com"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "ollama.com (интернет и DNS)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "1.1.1.1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "1.1.1.1 (интернет)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gaile.ee"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "gaile.ee через роутер"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 20,
+      "title": "Подключение наружу: неудачные проверки",
+      "description": "Доля неудачных проверок за точку графика. Отметки — начало и конец проверки прокси",
+      "gridPos": {
+        "x": 12,
+        "y": 43,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "1 - avg_over_time(probe_success{job=~\"probe-internet|probe-site\"}[$__rate_interval])",
+          "legendFormat": "{{instance}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 6,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "lineInterpolation": "linear",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ollama.com"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "ollama.com (интернет и DNS)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "1.1.1.1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "1.1.1.1 (интернет)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gaile.ee"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "gaile.ee через роутер"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "id": 21,
+      "title": "Ресурсы",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 51,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 22,
+      "title": "GPU: загрузка",
+      "gridPos": {
+        "x": 0,
+        "y": 52,
         "w": 8,
         "h": 8
       },
@@ -1606,11 +1886,11 @@
     },
     {
       "type": "timeseries",
-      "id": 20,
+      "id": 23,
       "title": "GPU: память",
       "gridPos": {
         "x": 8,
-        "y": 43,
+        "y": 52,
         "w": 8,
         "h": 8
       },
@@ -1718,11 +1998,11 @@
     },
     {
       "type": "timeseries",
-      "id": 21,
+      "id": 24,
       "title": "GPU: температура",
       "gridPos": {
         "x": 16,
-        "y": 43,
+        "y": 52,
         "w": 8,
         "h": 8
       },
@@ -1797,11 +2077,11 @@
     },
     {
       "type": "timeseries",
-      "id": 22,
+      "id": 25,
       "title": "CPU контейнеров (ядра), 8 самых загруженных",
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 60,
         "w": 12,
         "h": 9
       },
@@ -1861,11 +2141,11 @@
     },
     {
       "type": "bargauge",
-      "id": 23,
+      "id": 26,
       "title": "Память контейнеров сейчас",
       "gridPos": {
         "x": 12,
-        "y": 51,
+        "y": 60,
         "w": 12,
         "h": 9
       },
@@ -1917,24 +2197,24 @@
     },
     {
       "type": "row",
-      "id": 24,
+      "id": 27,
       "title": "Логи",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 60,
+        "y": 69,
         "w": 24,
         "h": 1
       }
     },
     {
       "type": "timeseries",
-      "id": 25,
+      "id": 28,
       "title": "Ошибки в логах по контейнерам",
       "gridPos": {
         "x": 0,
-        "y": 61,
+        "y": 70,
         "w": 24,
         "h": 7
       },
@@ -1994,12 +2274,12 @@
     },
     {
       "type": "logs",
-      "id": 26,
+      "id": 29,
       "title": "Последние ошибки и предупреждения",
       "description": "Всё остальное — в дашборде «Логи»",
       "gridPos": {
         "x": 0,
-        "y": 68,
+        "y": 77,
         "w": 24,
         "h": 12
       },

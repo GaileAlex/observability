@@ -55,7 +55,9 @@ host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
   tasks. RabbitMQ of the Estonian TTS has its own plugin. Kokoro, the Whisper service and Ollama have no metrics
   of their own: the blackbox exporter checks that they answer, their load is seen from cv-app and cAdvisor.
   The blackbox exporter also opens https://gaile.ee the way a visitor does (the router, nginx for Windows, cv-ui)
-  and reads the date the certificate expires.
+  and reads the date the certificate expires. Every 15 s it connects to 1.1.1.1 and ollama.com (job
+  probe-internet): when the site probe fails, these tell the broken uplink from the broken path back through
+  the router. The start and the end of a proxy check are marked on those graphs (its connections go out too).
 - **Alerts** (`grafana/provisioning/alerting`): a service or the site does not answer, 5xx responses, many errors in
   the logs, GPU memory almost full, a container restarting, the certificate expires in less than 14 days, password
   guessing (more than 20 wrong passwords in 15 minutes), errors in the browsers of the visitors, no backup of the
