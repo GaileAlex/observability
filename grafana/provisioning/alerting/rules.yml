@@ -1,0 +1,149 @@
+apiVersion: 1
+
+# Few alerts, each worth an e-mail. Every rule: A - the query, B - its last value, C - the condition on B
+groups:
+  - orgId: 1
+    name: gaile.ee
+    folder: gaile.ee
+    interval: 1m
+    rules:
+      - uid: service-down
+        title: Сервис не отвечает
+        condition: C
+        for: 3m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: '{{ $labels.instance }} ({{ $labels.job }}) не отвечает: контейнер остановлен или упал'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              # the metrics of a probe job come from the blackbox exporter: probe_success tells about the service
+              expr: up{job!~"probe-.*"} or probe_success
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [ 1 ] }
+
+      - uid: http-5xx
+        title: Ответы 5xx
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: '{{ $labels.application }}: {{ with $values.B }}{{ humanize .Value }}{{ end }} ответов 5xx за 10 минут'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum by (application) (increase(http_server_requests_seconds_count{status=~"5.."}[10m]))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 5 ] }
+
+      - uid: error-logs
+        title: Много ошибок в логах
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: '{{ $labels.container }}: {{ with $values.B }}{{ humanize .Value }}{{ end }} строк с уровнем error за 10 минут'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: sum by (container) (count_over_time({level="error", project!="observability"}[10m]))
+              queryType: instant
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 20 ] }
+
+      - uid: gpu-memory
+        title: Память GPU почти кончилась
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Занято {{ with $values.B }}{{ humanizePercentage .Value }}{{ end }} памяти GPU: Ollama начнёт выгружать слои модели на CPU'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum(nvidia_smi_memory_used_bytes) / sum(nvidia_smi_memory_total_bytes)
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 0.95 ] }
+
+      - uid: container-restarts
+        title: Контейнер перезапускается
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: '{{ $labels.name }} перезапустился {{ with $values.B }}{{ humanize .Value }}{{ end }} раз за 15 минут'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: max by (name) (changes(container_start_time_seconds[15m]))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 2 ] }

@@ -1,0 +1,77 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  # Actuator of the Spring applications on their management port (not published, not proxied by nginx);
+  # the metrics carry the tag application (management.metrics.tags.application)
+  - job_name: spring
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - cv-app:8081
+          - cv-whisper-app:8081
+          - estonian-tts-spring-app-1:8081
+    relabel_configs:
+      # instance = the container name, as in the probes below
+      - source_labels: [ __address__ ]
+        regex: ([^:]+):\d+
+        target_label: instance
+
+  # the services without metrics of their own, probed by the blackbox exporter (blackbox/blackbox.yml)
+  - job_name: probe-http
+    metrics_path: /probe
+    params:
+      module: [ http_2xx ]
+    static_configs:
+      - targets:
+          - http://kokoro-tts:8880/health
+          - http://cv-ollama:11434/api/version
+          - http://cv-ollama-cpu:11434/api/version
+    relabel_configs: &probe-relabel
+      - source_labels: [ __address__ ]
+        target_label: __param_target
+      - source_labels: [ __param_target ]
+        regex: (?:https?://)?([^:/]+).*
+        target_label: instance
+      - target_label: __address__
+        replacement: obs-blackbox:9115
+
+  - job_name: probe-tcp
+    metrics_path: /probe
+    params:
+      module: [ tcp_connect ]
+    static_configs:
+      - targets: [ cv-whisper:5001 ]
+    relabel_configs: *probe-relabel
+
+  - job_name: cadvisor
+    scrape_interval: 15s
+    static_configs:
+      - targets: [ obs-cadvisor:8080 ]
+    metric_relabel_configs:
+      # only the containers: cAdvisor also reports every cgroup of the Docker Desktop VM (without a name)
+      - source_labels: [ name ]
+        regex: ""
+        action: drop
+      - source_labels: [ container_label_com_docker_compose_project ]
+        target_label: project
+      - source_labels: [ container_label_com_docker_compose_service ]
+        target_label: service
+      - regex: container_label_com_docker_compose_(project|service)|id
+        action: labeldrop
+
+  - job_name: gpu
+    scrape_interval: 15s
+    static_configs:
+      - targets: [ obs-gpu-exporter:9835 ]
+
+  # the queue of the Estonian TTS (the rabbitmq_prometheus plugin is on in the image)
+  - job_name: rabbitmq
+    static_configs:
+      - targets: [ estonian-tts-rabbitmq-1:15692 ]
+
+  # the monitoring itself
+  - job_name: observability
+    static_configs:
+      - targets: [ localhost:9090, obs-loki:3100, obs-alloy:12345 ]
