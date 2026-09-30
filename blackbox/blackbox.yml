@@ -1,0 +1,16 @@
+# Availability of the services without their own metrics (Kokoro, the Whisper service, Ollama):
+# Prometheus asks the exporter to probe them (prometheus.yml, job probe) and gets probe_success 0/1
+modules:
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+
+  # the Whisper service has no health endpoint, and its two gunicorn threads may be busy with a long
+  # transcription: an accepted TCP connection is enough
+  tcp_connect:
+    prober: tcp
+    timeout: 10s
+    tcp:
+      preferred_ip_protocol: ip4

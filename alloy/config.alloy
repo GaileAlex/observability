@@ -1,0 +1,169 @@
+// The logs of every container of this Docker host go to Loki.
+// Labels (Loki indexes them, so each has few values): container, project, service, stream, level.
+// level is one of error / warn / info (debug lines are dropped); a line without a recognizable level gets none,
+// Loki then guesses detected_level itself.
+
+logging {
+  level = "warn"
+}
+
+discovery.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "15s"
+}
+
+discovery.relabel "containers" {
+  targets = []
+
+  // the throwaway containers of the integration tests (Testcontainers)
+  rule {
+    source_labels = ["__meta_docker_container_label_org_testcontainers"]
+    regex         = "true"
+    action        = "drop"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "project"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.process.containers.receiver]
+}
+
+loki.process "containers" {
+  // colors of the terminal (Kokoro, RabbitMQ)
+  stage.replace {
+    expression = `(\x1b\[[0-9;]*m)`
+    replace    = ""
+  }
+
+  // Spring Boot: "2026-09-30T09:36:52.964+03:00  INFO 1 --- [whisper] [scheduling-2] e.g.s.c.p.SpeechAnalysisService : ..."
+  // (the application name in brackets is optional); the lines of a stack trace belong to the line before them
+  stage.match {
+    selector = `{container=~"cv-app|cv-whisper-app|estonian-tts-spring-app-1"}`
+
+    stage.multiline {
+      firstline     = `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`
+      max_wait_time = "3s"
+      max_lines     = 300
+    }
+    stage.regex {
+      expression = `^\S+\s+(?P<level>[A-Z]+)\s+\d+\s+---\s+(?:\[[^\]]*\]\s+)?\[[^\]]*\]\s+(?P<logger>\S+)\s+:`
+    }
+    // e.g. access-accounting-log, error-log: {container="cv-app"} | logger="error-log"
+    stage.structured_metadata {
+      values = { logger = "" }
+    }
+  }
+
+  // nginx of the site: the access log (rt= seconds of the request, see frontend/default.conf of CV) and the error log
+  stage.match {
+    selector = `{container="cv-ui"}`
+
+    stage.regex {
+      expression = `"(?P<method>[A-Z]+) (?P<path>[^ "]*)[^"]*" (?P<status>\d{3}) `
+    }
+    stage.regex {
+      expression = `rt=(?P<rt>[\d.]+)`
+    }
+    stage.regex {
+      source     = "status"
+      expression = `^(?P<server_error>5)`
+    }
+    stage.regex {
+      expression = `^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \[(?P<level>[a-z]+)\]`
+    }
+    // the bots looking for .env, credentials.json etc.: nginx reports every missing file as [error]
+    stage.regex {
+      expression = `open\(\) "[^"]*" failed \((?P<not_found>2): No such file or directory\)`
+    }
+    // a request is an error only when the server failed (5xx); 404 of the bots is not worth a warning
+    stage.template {
+      source   = "level"
+      template = `{{ if .server_error }}error{{ else if or .status .not_found }}info{{ else if .Value }}{{ .Value }}{{ end }}`
+    }
+    // static files served fine are noise; pages, API calls and every failure stay
+    stage.drop {
+      source              = "status,path"
+      separator           = " "
+      expression          = `^[23]\d\d \S+\.(?:js|mjs|css|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|map|webmanifest)(?:\?\S*)?$`
+      drop_counter_reason = "static_files"
+    }
+    stage.structured_metadata {
+      values = { status = "", method = "", rt = "" }
+    }
+  }
+
+  // everything else: the level in any usual form (Python, Go, Ollama, RabbitMQ, Selenium, PostgreSQL, Grafana).
+  // Each regex that matches overrides the one before: an upper-case word near the start ("INFO", "| DEBUG |",
+  // "ERROR:"), then a word in brackets ("[warning]"), then logfmt ("level=info", anywhere in the line).
+  // A lower-case bare word is not a level: "rule_uid=error-logs" or "no error" is a part of the message
+  stage.match {
+    selector = `{container=~".+", container!~"cv-app|cv-whisper-app|estonian-tts-spring-app-1|cv-ui"}`
+
+    stage.regex {
+      expression = `^.{0,40}?\b(?P<level>TRACE|DEBUG|INFO|NOTICE|WARN|WARNING|ERROR|ERR|CRITICAL|CRIT|FATAL|PANIC|LOG)\b`
+    }
+    stage.regex {
+      expression = `^.{0,48}?\[(?P<level>(?i:trace|debug|info|notice|warn|warning|error|err|crit|critical|fatal|panic))\]`
+    }
+    stage.regex {
+      expression = `(?:^|\s)level=(?P<level>[A-Za-z]+)`
+    }
+  }
+
+  stage.template {
+    source   = "level"
+    template = `{{ if .Value }}{{ $l := ToLower .Value }}{{ if eq $l "warn" "warning" }}warn{{ else if eq $l "error" "err" "crit" "critical" "fatal" "panic" "alert" "emerg" }}error{{ else if eq $l "debug" "trace" }}debug{{ else }}info{{ end }}{{ end }}`
+  }
+  stage.labels {
+    values = { level = "" }
+  }
+
+  // debug output (Kokoro, RabbitMQ)
+  stage.drop {
+    source              = "level"
+    value               = "debug"
+    drop_counter_reason = "debug"
+  }
+  // llama.cpp inside Ollama reports every slot of every request
+  stage.drop {
+    expression          = `^(?:slot|srv)\s`
+    drop_counter_reason = "ollama_slots"
+  }
+  // the availability probes of Prometheus (blackbox exporter) every 30 s: Kokoro /health, Ollama /api/version
+  stage.drop {
+    expression          = `"GET /health HTTP/1\.1" 200|\| 200 \|.*\| GET\s+"/api/version"`
+    drop_counter_reason = "probes"
+  }
+  // PostgreSQL: two lines about a checkpoint every five minutes
+  stage.drop {
+    expression          = `LOG:  checkpoint (?:starting|complete)`
+    drop_counter_reason = "pg_checkpoints"
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://obs-loki:3100/loki/api/v1/push"
+  }
+}

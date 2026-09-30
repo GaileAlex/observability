@@ -1,0 +1,4 @@
+# secrets: the Grafana admin password and the Gmail account for the alerts (see .env.example)
+.env
+.idea/
+*.iml

@@ -1,0 +1,159 @@
+# Logs and metrics of every container of this host (CV, Whisper, Estonian TTS, Kokoro, Ollama) in one Grafana:
+#   docker compose up -d        ->  http://127.0.0.1:3000 (the password is in .env, see .env.example)
+# Alloy reads the logs of all containers through the Docker API and sends them to Loki; Prometheus scrapes
+# the Actuator of the Spring applications, cAdvisor (CPU/memory of the containers) and the GPU exporter,
+# the blackbox exporter checks that Kokoro, the Whisper service and Ollama answer.
+# Everything is free and local: nothing leaves the machine, only Grafana is published and only on 127.0.0.1.
+name: observability
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+
+  loki:
+    image: grafana/loki:3.7.8
+    container_name: obs-loki
+    logging: *logging
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.20.1
+    container_name: obs-alloy
+    logging: *logging
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - --disable-reporting
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # the positions in the logs of the containers: after a restart Alloy goes on where it stopped
+      - alloy-data:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # the pipelines of the logs, live: http://127.0.0.1:12345
+    ports:
+      - "127.0.0.1:12345:12345"
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    container_name: obs-prometheus
+    logging: *logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=90d
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # the state of the scrapes: http://127.0.0.1:9090/targets
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  # CPU, memory and network of every container
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6
+    container_name: obs-cadvisor
+    logging: *logging
+    privileged: true
+    devices:
+      - /dev/kmsg
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+      - --disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process,hugetlb,referenced_memory,cpu_topology,resctrl,cpuset,advtcp,memory_numa
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    restart: unless-stopped
+
+  # load, memory, temperature and power of the GPU shared by Ollama, Whisper, Kokoro and the Estonian TTS (nvidia-smi)
+  gpu-exporter:
+    image: utkuozdemir/nvidia_gpu_exporter:1.15.1
+    container_name: obs-gpu-exporter
+    logging: *logging
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    restart: unless-stopped
+
+  # is Kokoro / the Whisper service / Ollama up: they have no metrics of their own (Kokoro is a fork, kept close to upstream)
+  blackbox:
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: obs-blackbox
+    logging: *logging
+    command: --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.3
+    container_name: obs-grafana
+    logging: *logging
+    # ${...} come from .env next to this file (see .env.example)
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_DEFAULT_LANGUAGE: ru-RU
+      GF_DATE_FORMATS_DEFAULT_TIMEZONE: Europe/Tallinn
+      # info writes a line for every evaluation of an alert rule
+      GF_LOG_LEVEL: warn
+      # nothing is sent to grafana.com
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      # the alerts go by e-mail through the Gmail account of the application (SPRING_MAIL_* of CV/.env)
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: smtp.gmail.com:587
+      GF_SMTP_USER: ${SMTP_USER:-}
+      GF_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      GF_SMTP_FROM_ADDRESS: ${SMTP_USER:-}
+      GF_SMTP_FROM_NAME: Grafana gaile.ee
+      GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS
+      # grafana/provisioning/alerting/notifications.yml
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - loki
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  loki-data:
+  alloy-data:
+  prometheus-data:
+  grafana-data:
+
+# the network of all the projects: Prometheus reaches cv-app, cv-whisper-app, estonian-tts-spring-app-1 by name
+networks:
+  default:
+    external: true
+    name: kokoro-net
