@@ -133,6 +133,25 @@
             "value": ""
           }
         ]
+      },
+      {
+        "name": "trace",
+        "label": "traceId",
+        "type": "textbox",
+        "query": "",
+        "description": "traceId из строки Spring-приложения ([traceId-spanId] после имени потока): панель внизу покажет все строки этого запроса во всех приложениях, любого уровня",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ]
       }
     ]
   },
@@ -367,6 +386,120 @@
             "uid": "loki"
           },
           "expr": "{container=\"cv-ui\"} | rt > 2",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "enableInfiniteScrolling": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "type": "logs",
+      "id": 5,
+      "title": "Ошибки скриптов в браузерах посетителей (client-error-log)",
+      "description": "Frontend отправляет ошибки своих скриптов в cv-app (ClientErrorHandler → ClientErrorLog): страница, адрес, браузер, сообщение и стек",
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{container=\"cv-app\"} | logger=\"client-error-log\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "enableInfiniteScrolling": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "type": "logs",
+      "id": 6,
+      "title": "PostgreSQL: медленные запросы, блокировки, ошибки",
+      "description": "Запросы дольше 500 мс (duration_ms), ожидание блокировки дольше секунды, сортировка на диске — настройки в docker-compose.yml CV",
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{container=\"cv-postgres\", level=~\"warn|error\"}",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "enableInfiniteScrolling": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "type": "logs",
+      "id": 7,
+      "title": "Все строки одного запроса (traceId)",
+      "description": "Введите traceId вверху. Строки cv-app, Whisper и Estonian TTS с этим traceId — входящий запрос, вызовы LLM, фоновые задачи, которые он запустил",
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 12
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{container=~\".+\"} | trace_id=~\"$trace\" | trace_id!=\"\"",
           "queryType": "range"
         }
       ],

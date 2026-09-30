@@ -147,3 +147,120 @@ groups:
               expression: B
               conditions:
                 - evaluator: { type: gt, params: [ 2 ] }
+
+      # the site as a visitor reaches it is in service-down (the job probe-site); here its certificate
+      - uid: site-certificate
+        title: Сертификат сайта скоро истечёт
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Сертификат {{ $labels.instance }} истекает через {{ with $values.B }}{{ humanize .Value }}{{ end }} дн.: обновите /etc/nginx/certs в cv-ui'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: (probe_ssl_earliest_cert_expiry{job="probe-site"} - time()) / 86400
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [ 14 ] }
+
+      # LoginAttemptService of CV blocks 20 failures of an address in 15 minutes: more of them come from many addresses
+      - uid: password-guessing
+        title: Подбор паролей
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: '{{ with $values.B }}{{ humanize .Value }}{{ end }} неверных паролей за 15 минут: {container="cv-app"} |= "Wrong password"'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: sum(count_over_time({container="cv-app"} |= "Wrong password for" [15m]))
+              queryType: instant
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 20 ] }
+
+      # errors of the scripts in the browsers of the visitors (ClientErrorHandler of the frontend -> ClientErrorLog)
+      - uid: browser-errors
+        title: Ошибки в браузерах посетителей
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: '{{ with $values.B }}{{ humanize .Value }}{{ end }} ошибок скриптов сайта за 15 минут, после деплоя страница могла сломаться: {container="cv-app"} |= "Browser error"'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: sum(count_over_time({container="cv-app"} |= "Browser error on" [15m]))
+              queryType: instant
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 10 ] }
+
+      # pg-backup of CV runs at 2:00 and 20:00 and writes this line after each backup; a failed backup writes
+      # nothing like it, so its absence is the alert
+      - uid: backup-missing
+        title: Нет свежего бэкапа базы
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'pg-backup не сделал ни одного бэкапа за сутки: {container="pg-backup"}'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 86400, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: absent_over_time({container="pg-backup"} |= "SQL backup created successfully" [24h])
+              queryType: instant
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 0 ] }
