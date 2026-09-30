@@ -237,7 +237,7 @@ loki.process "containers" {
   }
   // the availability probes of Prometheus (blackbox exporter): Kokoro /health, Ollama /api/version, the site
   stage.drop {
-    expression          = `"GET /health HTTP/1\.1" 200|\| 200 \|.*\| GET\s+"/api/version"|"Blackbox Exporter/[^"]*"`
+    expression          = `"GET /health HTTP/1\.1" 200|\| 200 \|.*\| GET\s+"/api/version"|"Blackbox-Exporter/[^"]*"`
     drop_counter_reason = "probes"
   }
   // Loki cancels the queries Grafana no longer waits for (a refreshed or closed dashboard) and reports each at error
