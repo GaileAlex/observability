@@ -78,7 +78,7 @@ groups:
             datasourceUid: loki
             model:
               refId: A
-              expr: sum by (container) (count_over_time({level="error", project!="observability"}[10m]))
+              expr: sum by (container) (count_over_time({level="error", container!~"obs-.*"}[10m]))
               queryType: instant
           - refId: B
             datasourceUid: __expr__
