@@ -28,7 +28,8 @@ docker compose up -d
 Alloy also reads the error log of nginx for Windows in front of cv-ui (`etc/windows-proxy` of CV), a folder of the
 host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
 
-- **Grafana**: http://127.0.0.1:3000 (user `admin`) - dashboards "обзор", "логи", "JVM" in the folder gaile.ee
+- **Grafana**: http://127.0.0.1:3000 (user `admin`) - dashboards "обзор", "логи", "JVM", "медленные запросы" in
+  the folder gaile.ee (Dashboards → gaile.ee; "Library panels" stays empty: the panels are generated, not shared)
 - **Prometheus**: http://127.0.0.1:9090/targets - what is scraped and whether it answers
 - **Alloy**: http://127.0.0.1:12345 - the pipelines of the logs
 
@@ -70,3 +71,12 @@ node scripts/gen-dashboards.js
 
 Grafana picks the files up within 30 s. A dashboard changed in the UI cannot be saved over the provisioned one:
 move the change into the script.
+
+"медленные запросы" gathers what tells where a request loses its time: p95 of every application, the slowest
+endpoints (p95 and maximum), requests to the site slower than 2 s, the calls cv-app waits for (LLM, Whisper, TTS),
+the `@Scheduled` tasks, the Hikari pool, slow SQL, GPU, CPU and GC.
+
+The stars and the bookmarks of the menu are preferences of the user `admin` (the volume `grafana-data`), not
+provisioned. A dashboard can be bookmarked only while it is starred, and by the URL the menu gives it: the menu
+drops the Cyrillic of the slug (`/d/gaile-slow/gaileee-`, not the `url` of `/api/search`), so a bookmark set through
+`PATCH /api/user/preferences` with another URL is silently not shown.
