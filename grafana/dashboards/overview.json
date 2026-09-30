@@ -2294,7 +2294,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{level=~\"error|warn\", container!~\"obs-.*\"}",
+          "expr": "{level=~\"error|warn\", container!~\"obs-.*\"} | line_format `{{ regexReplaceAll \"^\\\\S+\\\\s+[A-Z]+\\\\s+\\\\d+\\\\s+---\\\\s+(?:\\\\[[^\\\\]]*\\\\]\\\\s+)??\\\\[\\\\s*(?P<thread>[^\\\\]]*?)\\\\s*\\\\]\\\\s+(?:\\\\[(?:(?P<trace_id>[0-9a-f]{32})-[0-9a-f]{16}|\\\\s*)\\\\]\\\\s+)?(?P<logger>\\\\S+)\\\\s+:\\\\s?(?P<msg>[^\\\\n]*)\" __line__ \"\\u001b[36m${logger}\\u001b[0m  ${msg}  \\u001b[2m${thread} ${trace_id}\\u001b[0m\" }}`",
           "queryType": "range"
         }
       ],

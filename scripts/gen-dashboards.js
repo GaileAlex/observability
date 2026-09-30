@@ -153,11 +153,21 @@ function barGauge({ title, description, targets, unit, gridPos, decimals }) {
     };
 }
 
+// A line of the Spring applications is shown as "logger  message  thread traceId": its own time and level are
+// dropped (the panel shows them), the logger is cyan, thread and traceId dim (the panel renders the ANSI codes,
+// dim as the secondary text color of the theme), so the message stands out. Only the first line is changed,
+// a stack trace stays below it; the lines of the other containers do not match and stay as they are.
+// The line filters of a query still see the original line: line_format goes last.
+// Grafana puts its variables into ${name} before Loki sees the query: no group may be named like one ($trace)
+const SPRING_LINE = String.raw`^\S+\s+[A-Z]+\s+\d+\s+---\s+(?:\[[^\]]*\]\s+)??\[\s*(?P<thread>[^\]]*?)\s*\]\s+(?:\[(?:(?P<trace_id>[0-9a-f]{32})-[0-9a-f]{16}|\s*)\]\s+)?(?P<logger>\S+)\s+:\s?(?P<msg>[^\n]*)`;
+const SPRING_LINE_SHOWN = '\x1b[36m${logger}\x1b[0m  ${msg}  \x1b[2m${thread} ${trace_id}\x1b[0m';
+const SPRING_FORMAT = ` | line_format \`{{ regexReplaceAll ${JSON.stringify(SPRING_LINE)} __line__ ${JSON.stringify(SPRING_LINE_SHOWN)} }}\``;
+
 function logs({ title, description, expr, gridPos }) {
     return {
         type: 'logs', id: nextId++, title, description, gridPos,
         datasource: LOKI,
-        targets: withRefIds([{ datasource: LOKI, expr, queryType: 'range' }]),
+        targets: withRefIds([{ datasource: LOKI, expr: expr + SPRING_FORMAT, queryType: 'range' }]),
         options: {
             showTime: true,
             showLabels: false,
@@ -481,7 +491,7 @@ const logsDashboard = dashboard({
         },
         {
             name: 'trace', label: 'traceId', type: 'textbox', query: '',
-            description: 'traceId из строки Spring-приложения ([traceId-spanId] после имени потока): панель внизу покажет все строки этого запроса во всех приложениях, любого уровня',
+            description: 'traceId строки Spring-приложения (серым в конце её первой строки, после имени потока; в деталях строки — trace_id): панель внизу покажет все строки этого запроса во всех приложениях, любого уровня',
             current: { selected: false, text: '', value: '' },
             options: [{ selected: true, text: '', value: '' }],
         },
