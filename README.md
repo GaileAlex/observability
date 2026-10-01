@@ -14,7 +14,7 @@ All parts are free and self-hosted; nothing is sent outside, only Grafana is pub
 | Prometheus | 3.15 | metrics, kept 90 days |
 | cAdvisor | 0.60 | CPU and memory of the containers |
 | nvidia_gpu_exporter | 1.15 | load, memory, temperature of the GPU (nvidia-smi) |
-| blackbox exporter | 0.28 | is Kokoro / the Whisper service / Ollama / the site answering |
+| blackbox exporter | 0.28 | is Kokoro / the Whisper service / Ollama / the site / the way out to the Internet answering |
 
 ## Start
 
@@ -82,3 +82,18 @@ The stars and the bookmarks of the menu are preferences of the user `admin` (the
 provisioned. A dashboard can be bookmarked only while it is starred, and by the URL the menu gives it: the menu
 drops the Cyrillic of the slug (`/d/gaile-slow/gaileee-`, not the `url` of `/api/search`), so a bookmark set through
 `PATCH /api/user/preferences` with another URL is silently not shown.
+
+## Versions
+
+Every image is pinned to an exact tag in `docker-compose.yml`, never `latest`: an update is a commit. To move one,
+change its tag there and in the table above, then (e.g. Grafana)
+
+```bash
+docker compose pull grafana && docker compose up -d grafana
+```
+
+Grafana publishes a security fix for all its supported lines on the same day (13.2.x, 13.1.x...): take the patch of
+the line in use. `scripts/gen-dashboards.js` needs only Node, no npm packages.
+
+Dependabot alerts and security updates are on for the repository, as for CV, but GitHub reads package manifests
+only: it does not look into Docker images, so the alerts stay empty here. New releases are checked by hand.
