@@ -1,6 +1,7 @@
 apiVersion: 1
 
-# Few alerts, each worth an e-mail. Every rule: A - the query, B - its last value, C - the condition on B
+# Few alerts, each worth an e-mail. Every rule: A - the query, B - its last value (the same in every rule:
+# &last-value), C - the condition on B
 groups:
   - orgId: 1
     name: gaile.ee
@@ -25,17 +26,13 @@ groups:
               # probe-internet is no service: a lost uplink already fails probe-site
               expr: up{job!~"probe-.*"} or probe_success{job!="probe-internet"}
               instant: true
-          - refId: B
+          - &last-value
+            refId: B
             datasourceUid: __expr__
             model: { refId: B, type: reduce, expression: A, reducer: last }
           - refId: C
             datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator: { type: lt, params: [ 1 ] }
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: lt, params: [ 1 ] } } ] }
 
       - uid: http-5xx
         title: Ответы 5xx
@@ -53,17 +50,10 @@ groups:
               refId: A
               expr: sum by (application) (increase(http_server_requests_seconds_count{status=~"5.."}[10m]))
               instant: true
-          - refId: B
-            datasourceUid: __expr__
-            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - *last-value
           - refId: C
             datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator: { type: gt, params: [ 5 ] }
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 5 ] } } ] }
 
       - uid: error-logs
         title: Много ошибок в логах
@@ -81,17 +71,10 @@ groups:
               refId: A
               expr: sum by (container) (count_over_time({level="error", container!~"obs-.*"}[10m]))
               queryType: instant
-          - refId: B
-            datasourceUid: __expr__
-            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - *last-value
           - refId: C
             datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator: { type: gt, params: [ 20 ] }
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 20 ] } } ] }
 
       - uid: gpu-memory
         title: Память GPU почти кончилась
@@ -109,17 +92,10 @@ groups:
               refId: A
               expr: sum(nvidia_smi_memory_used_bytes) / sum(nvidia_smi_memory_total_bytes)
               instant: true
-          - refId: B
-            datasourceUid: __expr__
-            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - *last-value
           - refId: C
             datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator: { type: gt, params: [ 0.95 ] }
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 0.95 ] } } ] }
 
       - uid: container-restarts
         title: Контейнер перезапускается
@@ -137,17 +113,10 @@ groups:
               refId: A
               expr: max by (name) (changes(container_start_time_seconds[15m]))
               instant: true
-          - refId: B
-            datasourceUid: __expr__
-            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - *last-value
           - refId: C
             datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator: { type: gt, params: [ 2 ] }
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 2 ] } } ] }
 
       # the site as a visitor reaches it is in service-down (the job probe-site); here its certificate
       - uid: site-certificate
@@ -166,17 +135,10 @@ groups:
               refId: A
               expr: (probe_ssl_earliest_cert_expiry{job="probe-site"} - time()) / 86400
               instant: true
-          - refId: B
-            datasourceUid: __expr__
-            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - *last-value
           - refId: C
             datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator: { type: lt, params: [ 14 ] }
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: lt, params: [ 14 ] } } ] }
 
       # LoginAttemptService of CV blocks 20 failures of an address in 15 minutes: more of them come from many addresses
       - uid: password-guessing
@@ -195,17 +157,10 @@ groups:
               refId: A
               expr: sum(count_over_time({container="cv-app"} |= "Wrong password for" [15m]))
               queryType: instant
-          - refId: B
-            datasourceUid: __expr__
-            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - *last-value
           - refId: C
             datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator: { type: gt, params: [ 20 ] }
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 20 ] } } ] }
 
       # errors of the scripts in the browsers of the visitors (ClientErrorHandler of the frontend -> ClientErrorLog)
       - uid: browser-errors
@@ -224,17 +179,10 @@ groups:
               refId: A
               expr: sum(count_over_time({container="cv-app"} |= "Browser error on" [15m]))
               queryType: instant
-          - refId: B
-            datasourceUid: __expr__
-            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - *last-value
           - refId: C
             datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator: { type: gt, params: [ 10 ] }
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 10 ] } } ] }
 
       # pg-backup of CV runs at 2:00 and 20:00 and writes this line after each backup; a failed backup writes
       # nothing like it, so its absence is the alert
@@ -254,14 +202,7 @@ groups:
               refId: A
               expr: absent_over_time({container="pg-backup"} |= "SQL backup created successfully" [24h])
               queryType: instant
-          - refId: B
-            datasourceUid: __expr__
-            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - *last-value
           - refId: C
             datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator: { type: gt, params: [ 0 ] }
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 0 ] } } ] }
