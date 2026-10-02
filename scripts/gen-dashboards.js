@@ -11,8 +11,6 @@ const LOKI = { type: 'loki', uid: 'loki' };
 const SLOT = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
 const STATUS = { good: '#0ca30c', warning: '#fab219', critical: '#d03b3b' };
 
-let nextId = 1;
-
 const prom = (expr, legendFormat, extra = {}) => ({ datasource: PROM, expr, legendFormat, range: true, ...extra });
 const promInstant = (expr, refId) => ({ datasource: PROM, expr, refId, instant: true, range: false, format: 'table' });
 const loki = (expr, legendFormat, extra = {}) => ({ datasource: LOKI, expr, legendFormat, queryType: 'range', ...extra });
@@ -26,6 +24,14 @@ function seriesOverride(name, color, displayName) {
     const properties = [{ id: 'color', value: { mode: 'fixed', fixedColor: color } }];
     if (displayName) properties.push({ id: 'displayName', value: displayName });
     return { matcher: { id: 'byName', options: name }, properties };
+}
+
+// the limit a series grows to (total memory, max heap): a thin line without fill, in the color of the text
+function limitOverride(name) {
+    return {
+        matcher: { id: 'byName', options: name },
+        properties: [{ id: 'color', value: { mode: 'fixed', fixedColor: 'text' } }, { id: 'custom.fillOpacity', value: 0 }, { id: 'custom.lineWidth', value: 1 }],
+    };
 }
 
 const LEVEL_OVERRIDES = [
@@ -54,10 +60,7 @@ const NET_OVERRIDES = [
 
 // the queries shown on more than one dashboard (the dashboard "медленные запросы" gathers them)
 const CLIENT_P95 = 'histogram_quantile(0.95, sum by (client_name, le) (rate(http_client_requests_seconds_bucket{application="cv", outcome="SUCCESS"}[5m])))';
-const SCHEDULED_AVG = 'sum by (code_function) (rate(tasks_scheduled_execution_seconds_sum[15m])) / sum by (code_function) (rate(tasks_scheduled_execution_seconds_count[15m]))';
-const CONTAINER_CPU_TOP8 = 'sum by (name) (rate(container_cpu_usage_seconds_total[5m])) and on (name) topk(8, avg_over_time(sum by (name) (rate(container_cpu_usage_seconds_total[5m]))[$__range:1m]))';
 const NGINX_SLOW = '{container="cv-ui"} | rt > 2';
-const POSTGRES_SLOW = '{container="cv-postgres", level=~"warn|error"}';
 const hikariTargets = (app) => [
     prom(`sum(hikaricp_connections_active{${app}})`, 'заняты'),
     prom(`sum(hikaricp_connections_idle{${app}})`, 'свободны'),
@@ -66,12 +69,12 @@ const hikariTargets = (app) => [
 const HIKARI_OVERRIDES = [seriesOverride('заняты', SLOT[0]), seriesOverride('свободны', SLOT[2]), seriesOverride('ждут', STATUS.critical)];
 
 function row(title, y) {
-    return { type: 'row', id: nextId++, title, collapsed: false, panels: [], gridPos: { x: 0, y, w: 24, h: 1 } };
+    return { type: 'row', title, collapsed: false, panels: [], gridPos: { x: 0, y, w: 24, h: 1 } };
 }
 
 function timeseries({ title, description, targets, unit, gridPos, overrides = [], bars = false, stack = false, min = 0, max, decimals }) {
     return {
-        type: 'timeseries', id: nextId++, title, description, gridPos,
+        type: 'timeseries', title, description, gridPos,
         datasource: targets[0].datasource,
         targets: withRefIds(targets),
         fieldConfig: {
@@ -102,7 +105,7 @@ function timeseries({ title, description, targets, unit, gridPos, overrides = []
 
 function stat({ title, description, targets, unit, gridPos, decimals, thresholds, graph = true, mappings }) {
     return {
-        type: 'stat', id: nextId++, title, description, gridPos,
+        type: 'stat', title, description, gridPos,
         datasource: targets[0].datasource,
         targets: withRefIds(targets),
         fieldConfig: {
@@ -128,7 +131,7 @@ function stat({ title, description, targets, unit, gridPos, decimals, thresholds
 
 function barGauge({ title, description, targets, unit, gridPos, decimals }) {
     return {
-        type: 'bargauge', id: nextId++, title, description, gridPos,
+        type: 'bargauge', title, description, gridPos,
         datasource: targets[0].datasource,
         targets: withRefIds(targets),
         fieldConfig: {
@@ -163,9 +166,39 @@ const SPRING_LINE = String.raw`^\S+\s+[A-Z]+\s+\d+\s+---\s+(?:\[[^\]]*\]\s+)??\[
 const SPRING_LINE_SHOWN = '\x1b[36m${logger}\x1b[0m  ${msg}  \x1b[2m${thread} ${trace_id}\x1b[0m';
 const SPRING_FORMAT = ` | line_format \`{{ regexReplaceAll ${JSON.stringify(SPRING_LINE)} __line__ ${JSON.stringify(SPRING_LINE_SHOWN)} }}\``;
 
+// the field properties of the table columns
+const COUNT = [{ id: 'decimals', value: 0 }];
+const SECONDS = [{ id: 'unit', value: 's' }, { id: 'decimals', value: 2 }];
+const LABEL_HEADERS = { application: 'Приложение', method: 'Метод', uri: 'Эндпоинт' };
+
+// Instant queries of the period joined by their labels into a table: a column per label, then a column per query
+// ({ header, expr, properties }). The rows with less than one request (the first query) are left out.
+function endpointTable({ title, description, gridPos, labels, columns, sortBy }) {
+    const refId = (i) => String.fromCharCode(65 + i);
+    const fields = [...labels, ...columns.map((column, i) => `Value #${refId(i)}`)];
+    const headers = [...labels.map((label) => LABEL_HEADERS[label]), ...columns.map((column) => column.header)];
+    const indexByName = Object.fromEntries(fields.map((field, i) => [field, i]));
+    const renameByName = Object.fromEntries(fields.map((field, i) => [field, headers[i]]));
+    return {
+        type: 'table', title, description, gridPos,
+        datasource: PROM,
+        targets: columns.map((column, i) => promInstant(column.expr, refId(i))),
+        transformations: [
+            { id: 'merge', options: {} },
+            { id: 'organize', options: { excludeByName: { Time: true }, indexByName, renameByName } },
+            { id: 'filterByValue', options: { type: 'exclude', match: 'all', filters: [{ fieldName: columns[0].header, config: { id: 'lower', options: { value: 0.5 } } }] } },
+        ],
+        fieldConfig: {
+            defaults: { custom: { align: 'auto', cellOptions: { type: 'auto' } } },
+            overrides: columns.map((column) => ({ matcher: { id: 'byName', options: column.header }, properties: column.properties })),
+        },
+        options: { showHeader: true, cellHeight: 'sm', sortBy: [{ displayName: sortBy, desc: true }], footer: { show: false } },
+    };
+}
+
 function logs({ title, description, expr, gridPos }) {
     return {
-        type: 'logs', id: nextId++, title, description, gridPos,
+        type: 'logs', title, description, gridPos,
         datasource: LOKI,
         targets: withRefIds([{ datasource: LOKI, expr: expr + SPRING_FORMAT, queryType: 'range' }]),
         options: {
@@ -180,6 +213,35 @@ function logs({ title, description, expr, gridPos }) {
             sortOrder: 'Descending',
         },
     };
+}
+
+// ---------------------------------------------------------------- panels of more than one dashboard
+function scheduledTasksPanel(gridPos) {
+    return timeseries({
+        title: 'Фоновые задачи: среднее время выполнения',
+        description: '@Scheduled-задачи всех Spring-приложений: анализ беглости, проверка прокси, базы IP и т. д.',
+        gridPos,
+        targets: [prom('sum by (code_function) (rate(tasks_scheduled_execution_seconds_sum[15m])) / sum by (code_function) (rate(tasks_scheduled_execution_seconds_count[15m]))', '{{code_function}}')],
+        unit: 's',
+    });
+}
+
+function containerCpuPanel(gridPos) {
+    return timeseries({
+        title: 'CPU контейнеров (ядра), 8 самых загруженных',
+        gridPos,
+        targets: [prom('sum by (name) (rate(container_cpu_usage_seconds_total[5m])) and on (name) topk(8, avg_over_time(sum by (name) (rate(container_cpu_usage_seconds_total[5m]))[$__range:1m]))', '{{name}}')],
+        unit: 'short', decimals: 2,
+    });
+}
+
+function postgresSlowPanel(gridPos) {
+    return logs({
+        title: 'PostgreSQL: медленные запросы, блокировки, ошибки',
+        description: 'Запросы дольше 500 мс (duration_ms), ожидание блокировки дольше секунды, сортировка на диске — настройки в docker-compose.yml CV',
+        expr: '{container="cv-postgres", level=~"warn|error"}',
+        gridPos,
+    });
 }
 
 function dashboard({ uid, title, description, panels, templating = [], time = 'now-24h', refresh = '1m', tags }) {
@@ -200,12 +262,12 @@ function dashboard({ uid, title, description, panels, templating = [], time = 'n
             { title: 'JVM', type: 'link', url: '/d/gaile-jvm', icon: 'dashboard' },
             { title: 'Медленные запросы', type: 'link', url: '/d/gaile-slow', icon: 'bolt' },
         ],
-        panels,
+        // the ids follow the order of the panels
+        panels: panels.map(({ type, ...panel }, i) => ({ type, id: i + 1, ...panel })),
     };
 }
 
 // ---------------------------------------------------------------- overview
-nextId = 1;
 const API = 'application="cv", uri!~"/actuator.*"';
 const overview = dashboard({
     uid: 'gaile-overview',
@@ -297,38 +359,18 @@ const overview = dashboard({
             unit: 's',
             overrides: [seriesOverride('медиана', SLOT[0]), seriesOverride('p95', SLOT[1])],
         }),
-        {
-            type: 'table', id: nextId++, title: 'Эндпоинты за выбранный период',
+        endpointTable({
+            title: 'Эндпоинты за выбранный период',
             description: 'Сколько раз вызывали, 95-й процентиль времени и число ответов 5xx',
             gridPos: { x: 0, y: 16, w: 24, h: 9 },
-            datasource: PROM,
-            targets: [
-                promInstant(`sum by (method, uri) (increase(http_server_requests_seconds_count{${API}}[$__range]))`, 'A'),
-                promInstant(`histogram_quantile(0.95, sum by (method, uri, le) (increase(http_server_requests_seconds_bucket{${API}}[$__range])))`, 'B'),
-                promInstant(`sum by (method, uri) (increase(http_server_requests_seconds_count{${API}, status=~"5.."}[$__range]))`, 'C'),
+            labels: ['method', 'uri'],
+            columns: [
+                { header: 'Запросы', expr: `sum by (method, uri) (increase(http_server_requests_seconds_count{${API}}[$__range]))`, properties: COUNT },
+                { header: 'p95', expr: `histogram_quantile(0.95, sum by (method, uri, le) (increase(http_server_requests_seconds_bucket{${API}}[$__range])))`, properties: SECONDS },
+                { header: 'Ответы 5xx', expr: `sum by (method, uri) (increase(http_server_requests_seconds_count{${API}, status=~"5.."}[$__range]))`, properties: [...COUNT, { id: 'noValue', value: '0' }] },
             ],
-            transformations: [
-                { id: 'merge', options: {} },
-                {
-                    id: 'organize',
-                    options: {
-                        excludeByName: { Time: true },
-                        indexByName: { method: 0, uri: 1, 'Value #A': 2, 'Value #B': 3, 'Value #C': 4 },
-                        renameByName: { method: 'Метод', uri: 'Эндпоинт', 'Value #A': 'Запросы', 'Value #B': 'p95', 'Value #C': 'Ответы 5xx' },
-                    },
-                },
-                { id: 'filterByValue', options: { type: 'exclude', match: 'all', filters: [{ fieldName: 'Запросы', config: { id: 'lower', options: { value: 0.5 } } }] } },
-            ],
-            fieldConfig: {
-                defaults: { custom: { align: 'auto', cellOptions: { type: 'auto' } } },
-                overrides: [
-                    { matcher: { id: 'byName', options: 'Запросы' }, properties: [{ id: 'decimals', value: 0 }] },
-                    { matcher: { id: 'byName', options: 'p95' }, properties: [{ id: 'unit', value: 's' }, { id: 'decimals', value: 2 }] },
-                    { matcher: { id: 'byName', options: 'Ответы 5xx' }, properties: [{ id: 'decimals', value: 0 }, { id: 'noValue', value: '0' }] },
-                ],
-            },
-            options: { showHeader: true, cellHeight: 'sm', sortBy: [{ displayName: 'Запросы', desc: true }], footer: { show: false } },
-        },
+            sortBy: 'Запросы',
+        }),
 
         row('LLM, Whisper, TTS — вызовы из cv-app', 25),
         timeseries({
@@ -351,13 +393,7 @@ const overview = dashboard({
             targets: [prom('sort_desc(sum by (client_name, outcome) (increase(http_client_requests_seconds_count{application="cv", client_name=~"ollama.com|cv-ollama"}[$__range])))', '{{client_name}} · {{outcome}}', { instant: true, range: false })],
             unit: 'short', decimals: 0,
         }),
-        timeseries({
-            title: 'Фоновые задачи: среднее время выполнения',
-            description: '@Scheduled-задачи всех Spring-приложений: анализ беглости, проверка прокси, базы IP и т. д.',
-            gridPos: { x: 12, y: 34, w: 12, h: 8 },
-            targets: [prom(SCHEDULED_AVG, '{{code_function}}')],
-            unit: 's',
-        }),
+        scheduledTasksPanel({ x: 12, y: 34, w: 12, h: 8 }),
 
         row('Выход в интернет', 42),
         timeseries({
@@ -392,7 +428,7 @@ const overview = dashboard({
             unit: 'bytes',
             overrides: [
                 seriesOverride('занято', SLOT[0]),
-                { matcher: { id: 'byName', options: 'всего' }, properties: [{ id: 'color', value: { mode: 'fixed', fixedColor: 'text' } }, { id: 'custom.fillOpacity', value: 0 }, { id: 'custom.lineWidth', value: 1 }] },
+                limitOverride('всего'),
             ],
         }),
         timeseries({
@@ -401,12 +437,7 @@ const overview = dashboard({
             targets: [prom('max(nvidia_smi_temperature_gpu)', 'температура')],
             unit: 'celsius', min: undefined, overrides: [seriesOverride('температура', SLOT[1])],
         }),
-        timeseries({
-            title: 'CPU контейнеров (ядра), 8 самых загруженных',
-            gridPos: { x: 0, y: 60, w: 12, h: 9 },
-            targets: [prom(CONTAINER_CPU_TOP8, '{{name}}')],
-            unit: 'short', decimals: 2,
-        }),
+        containerCpuPanel({ x: 0, y: 60, w: 12, h: 9 }),
         barGauge({
             title: 'Память контейнеров сейчас',
             gridPos: { x: 12, y: 60, w: 12, h: 9 },
@@ -443,7 +474,6 @@ overview.annotations.list.push({
 });
 
 // ---------------------------------------------------------------- logs
-nextId = 1;
 // $monitoring is "obs-.*" (the own lines of this stack, all its containers are obs-*, hidden) or "-" (no container has this name: all shown)
 const SELECTOR = '{container=~"$container", level=~"$level", container!~"$monitoring"} |~ "(?i)$search"';
 const logsDashboard = dashboard({
@@ -526,12 +556,7 @@ const logsDashboard = dashboard({
             expr: '{container="cv-app"} | logger="client-error-log"',
             gridPos: { x: 0, y: 34, w: 12, h: 10 },
         }),
-        logs({
-            title: 'PostgreSQL: медленные запросы, блокировки, ошибки',
-            description: 'Запросы дольше 500 мс (duration_ms), ожидание блокировки дольше секунды, сортировка на диске — настройки в docker-compose.yml CV',
-            expr: POSTGRES_SLOW,
-            gridPos: { x: 12, y: 34, w: 12, h: 10 },
-        }),
+        postgresSlowPanel({ x: 12, y: 34, w: 12, h: 10 }),
         logs({
             title: 'Все строки одного запроса (traceId)',
             description: 'Введите traceId вверху. Строки cv-app, Whisper и Estonian TTS с этим traceId — входящий запрос, вызовы LLM, фоновые задачи, которые он запустил',
@@ -543,7 +568,6 @@ const logsDashboard = dashboard({
 });
 
 // ---------------------------------------------------------------- JVM
-nextId = 1;
 const APP = 'application="$application"';
 const jvm = dashboard({
     uid: 'gaile-jvm',
@@ -575,7 +599,7 @@ const jvm = dashboard({
             unit: 'bytes',
             overrides: [
                 seriesOverride('занято', SLOT[0]), seriesOverride('выделено', SLOT[2]),
-                { matcher: { id: 'byName', options: 'максимум' }, properties: [{ id: 'color', value: { mode: 'fixed', fixedColor: 'text' } }, { id: 'custom.fillOpacity', value: 0 }, { id: 'custom.lineWidth', value: 1 }] },
+                limitOverride('максимум'),
             ],
         }),
         timeseries({
@@ -615,7 +639,6 @@ const jvm = dashboard({
 // ---------------------------------------------------------------- slow requests
 // everything that tells where a request loses its time, in the order it is looked at: the site and the endpoints,
 // the services cv-app waits for, the database, the shared resources
-nextId = 1;
 const SERVER = 'uri!~"/actuator.*"';
 const APPLICATION_OVERRIDES = [
     seriesOverride('cv', SLOT[0], 'cv-app'),
@@ -642,38 +665,18 @@ const slow = dashboard({
             expr: NGINX_SLOW,
             gridPos: { x: 12, y: 1, w: 12, h: 8 },
         }),
-        {
-            type: 'table', id: nextId++, title: 'Самые медленные эндпоинты за выбранный период',
+        endpointTable({
+            title: 'Самые медленные эндпоинты за выбранный период',
             description: 'p95 и максимум времени ответа каждого эндпоинта всех Spring-приложений. Отсортировано по p95; нажмите на заголовок, чтобы сортировать иначе',
             gridPos: { x: 0, y: 9, w: 24, h: 10 },
-            datasource: PROM,
-            targets: [
-                promInstant(`sum by (application, method, uri) (increase(http_server_requests_seconds_count{${SERVER}}[$__range]))`, 'A'),
-                promInstant(`histogram_quantile(0.95, sum by (application, method, uri, le) (increase(http_server_requests_seconds_bucket{${SERVER}}[$__range])))`, 'B'),
-                promInstant(`max by (application, method, uri) (max_over_time(http_server_requests_seconds_max{${SERVER}}[$__range]))`, 'C'),
+            labels: ['application', 'method', 'uri'],
+            columns: [
+                { header: 'Запросы', expr: `sum by (application, method, uri) (increase(http_server_requests_seconds_count{${SERVER}}[$__range]))`, properties: COUNT },
+                { header: 'p95', expr: `histogram_quantile(0.95, sum by (application, method, uri, le) (increase(http_server_requests_seconds_bucket{${SERVER}}[$__range])))`, properties: SECONDS },
+                { header: 'Максимум', expr: `max by (application, method, uri) (max_over_time(http_server_requests_seconds_max{${SERVER}}[$__range]))`, properties: SECONDS },
             ],
-            transformations: [
-                { id: 'merge', options: {} },
-                {
-                    id: 'organize',
-                    options: {
-                        excludeByName: { Time: true },
-                        indexByName: { application: 0, method: 1, uri: 2, 'Value #A': 3, 'Value #B': 4, 'Value #C': 5 },
-                        renameByName: { application: 'Приложение', method: 'Метод', uri: 'Эндпоинт', 'Value #A': 'Запросы', 'Value #B': 'p95', 'Value #C': 'Максимум' },
-                    },
-                },
-                { id: 'filterByValue', options: { type: 'exclude', match: 'all', filters: [{ fieldName: 'Запросы', config: { id: 'lower', options: { value: 0.5 } } }] } },
-            ],
-            fieldConfig: {
-                defaults: { custom: { align: 'auto', cellOptions: { type: 'auto' } } },
-                overrides: [
-                    { matcher: { id: 'byName', options: 'Запросы' }, properties: [{ id: 'decimals', value: 0 }] },
-                    { matcher: { id: 'byName', options: 'p95' }, properties: [{ id: 'unit', value: 's' }, { id: 'decimals', value: 2 }] },
-                    { matcher: { id: 'byName', options: 'Максимум' }, properties: [{ id: 'unit', value: 's' }, { id: 'decimals', value: 2 }] },
-                ],
-            },
-            options: { showHeader: true, cellHeight: 'sm', sortBy: [{ displayName: 'p95', desc: true }], footer: { show: false } },
-        },
+            sortBy: 'p95',
+        }),
 
         row('Чего ждёт cv-app: LLM, Whisper, TTS, фоновые задачи', 19),
         timeseries({
@@ -683,13 +686,7 @@ const slow = dashboard({
             targets: [prom(CLIENT_P95, '{{client_name}}')],
             unit: 's', overrides: CLIENT_OVERRIDES,
         }),
-        timeseries({
-            title: 'Фоновые задачи: среднее время выполнения',
-            description: '@Scheduled-задачи всех Spring-приложений: анализ беглости, проверка прокси, базы IP и т. д.',
-            gridPos: { x: 12, y: 20, w: 12, h: 8 },
-            targets: [prom(SCHEDULED_AVG, '{{code_function}}')],
-            unit: 's',
-        }),
+        scheduledTasksPanel({ x: 12, y: 20, w: 12, h: 8 }),
 
         row('База данных', 28),
         timeseries({
@@ -700,12 +697,7 @@ const slow = dashboard({
             unit: 'short', decimals: 0,
             overrides: HIKARI_OVERRIDES,
         }),
-        logs({
-            title: 'PostgreSQL: медленные запросы, блокировки, ошибки',
-            description: 'Запросы дольше 500 мс (duration_ms), ожидание блокировки дольше секунды, сортировка на диске — настройки в docker-compose.yml CV',
-            expr: POSTGRES_SLOW,
-            gridPos: { x: 12, y: 29, w: 12, h: 8 },
-        }),
+        postgresSlowPanel({ x: 12, y: 29, w: 12, h: 8 }),
 
         row('Общие ресурсы', 37),
         timeseries({
@@ -719,12 +711,7 @@ const slow = dashboard({
             unit: 'percentunit', max: 1,
             overrides: [seriesOverride('загрузка', SLOT[0]), seriesOverride('память', SLOT[1])],
         }),
-        timeseries({
-            title: 'CPU контейнеров (ядра), 8 самых загруженных',
-            gridPos: { x: 8, y: 38, w: 8, h: 8 },
-            targets: [prom(CONTAINER_CPU_TOP8, '{{name}}')],
-            unit: 'short', decimals: 2,
-        }),
+        containerCpuPanel({ x: 8, y: 38, w: 8, h: 8 }),
         timeseries({
             title: 'Паузы GC (доля времени)',
             description: 'Сколько времени приложение стоит на сборке мусора: заметная доля — не хватает heap (дашборд JVM)',
