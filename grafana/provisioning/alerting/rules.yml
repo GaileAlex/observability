@@ -118,7 +118,7 @@ groups:
             datasourceUid: __expr__
             model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 2 ] } } ] }
 
-      # the site as a visitor reaches it is in service-down (the job probe-site); here its certificate
+      # whether the site answers is checked by service-down (the job probe-site); this rule watches its certificate
       - uid: site-certificate
         title: Сертификат сайта скоро истечёт
         condition: C

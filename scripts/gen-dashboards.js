@@ -58,7 +58,7 @@ const NET_OVERRIDES = [
     seriesOverride('gaile.ee', SLOT[6], 'gaile.ee через роутер'),
 ];
 
-// the queries shown on more than one dashboard (the dashboard "медленные запросы" gathers them)
+// the queries shown on more than one dashboard (the slow requests dashboard, gaile-slow, gathers them)
 const CLIENT_P95 = 'histogram_quantile(0.95, sum by (client_name, le) (rate(http_client_requests_seconds_bucket{application="cv", outcome="SUCCESS"}[5m])))';
 const NGINX_SLOW = '{container="cv-ui"} | rt > 2';
 const hikariTargets = (app) => [
@@ -262,7 +262,6 @@ function dashboard({ uid, title, description, panels, templating = [], time = 'n
             { title: 'JVM', type: 'link', url: '/d/gaile-jvm', icon: 'dashboard' },
             { title: 'Медленные запросы', type: 'link', url: '/d/gaile-slow', icon: 'bolt' },
         ],
-        // the ids follow the order of the panels
         panels: panels.map(({ type, ...panel }, i) => ({ type, id: i + 1, ...panel })),
     };
 }
@@ -460,7 +459,7 @@ const overview = dashboard({
         }),
     ],
 });
-// the connections of a proxy check go out through the same uplink: its start and end on the graphs of the way out
+// a proxy check loads the same uplink: its start and end are marked on the graphs of the way out
 overview.annotations.list.push({
     name: 'Проверка прокси',
     datasource: LOKI,
@@ -474,7 +473,7 @@ overview.annotations.list.push({
 });
 
 // ---------------------------------------------------------------- logs
-// $monitoring is "obs-.*" (the own lines of this stack, all its containers are obs-*, hidden) or "-" (no container has this name: all shown)
+// $monitoring is "obs-.*" (the lines of this stack itself are hidden: all its containers are obs-*) or "-" (no container has this name: all shown)
 const SELECTOR = '{container=~"$container", level=~"$level", container!~"$monitoring"} |~ "(?i)$search"';
 const logsDashboard = dashboard({
     uid: 'gaile-logs',

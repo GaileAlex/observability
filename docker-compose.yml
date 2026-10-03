@@ -135,7 +135,7 @@ services:
       GF_SMTP_FROM_ADDRESS: ${SMTP_USER:-}
       GF_SMTP_FROM_NAME: Grafana gaile.ee
       GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS
-      # grafana/provisioning/alerting/notifications.yml
+      # the recipient of the alerts, used by grafana/provisioning/alerting/notifications.yml
       ALERT_EMAIL: ${ALERT_EMAIL:-}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
