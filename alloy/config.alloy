@@ -84,8 +84,8 @@ loki.process "containers" {
     stage.regex {
       expression = `^\S+\s+(?P<level>[A-Z]+)\s+\d+\s+---\s+(?:\[[^\]]*\]\s+){1,2}?(?:\[(?:(?P<trace_id>[0-9a-f]{32})-[0-9a-f]{16}|\s*)\]\s+)?(?P<logger>\S+)\s+:`
     }
-    // e.g. access-accounting-log, error-log: {container="cv-app"} | logger="error-log";
-    // all the lines of one request in every application: {project=~".+"} | trace_id="..."
+    // queried as {container="cv-app"} | logger="error-log" (access-accounting-log, error-log, ...)
+    // and, for all the lines of one request in every application, {project=~".+"} | trace_id="..."
     stage.structured_metadata {
       values = { logger = "", trace_id = "" }
     }
@@ -103,10 +103,12 @@ loki.process "containers" {
   }
 
   // nginx for Windows in front of cv-ui (etc/windows-proxy of CV): its error log, a file of the Windows host.
-  // Its own time: the first start reads the whole file, the lines must not all get the time of the reading
+  // The time is taken from the line: the first start reads the whole file, and the lines must not all get
+  // the time of the reading
   stage.match {
     selector = `{container="windows-nginx"}`
 
+    // CRLF line endings of Windows
     stage.replace {
       expression = `(\r)$`
       replace    = ""
@@ -181,7 +183,7 @@ loki.process "containers" {
   }
 
   // PostgreSQL: a statement slower than log_min_duration_statement, a wait for a lock, a sort on disk
-  // (docker-compose.yml of CV) come as LOG, they are warnings; duration_ms: {container="cv-postgres"} | duration_ms > 2000
+  // (docker-compose.yml of CV) come as LOG and are made warnings; query: {container="cv-postgres"} | duration_ms > 2000
   stage.match {
     selector = `{container=~"cv-postgres|cv-dev"}`
 
