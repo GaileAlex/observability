@@ -59,7 +59,7 @@ host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
   probe-internet): when the site probe fails, these tell the broken uplink from the broken path back through
   the router. The start and the end of a proxy check are marked on those graphs (its connections go out too).
 - **Alerts** (`grafana/provisioning/alerting`): a service or the site does not answer, 5xx responses, many errors in
-  the logs, GPU memory almost full, a container restarting, the certificate expires in less than 14 days, password
+  the logs, a container restarting, the certificate expires in less than 14 days, password
   guessing (more than 20 wrong passwords in 15 minutes), errors in the browsers of the visitors, no backup of the
   database for a day. Grafana reads these files only at start: `docker compose restart grafana` after a change.
 

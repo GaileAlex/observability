@@ -1,5 +1,12 @@
 apiVersion: 1
 
+# A rule taken out of this file stays in Grafana until it is deleted here. gpu-memory (VRAM above 95%) was noise: the
+# local chat model and Whisper loaded together always take 96-98%, and Ollama sees ~14.8 GiB free whatever the other
+# containers hold, so it loads every layer on the GPU and never moved any to the CPU as the alert said
+deleteRules:
+  - orgId: 1
+    uid: gpu-memory
+
 # Few alerts, each worth an e-mail. Every rule: A - the query, B - its last value (the same in every rule:
 # &last-value), C - the condition on B
 groups:
@@ -75,27 +82,6 @@ groups:
           - refId: C
             datasourceUid: __expr__
             model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 20 ] } } ] }
-
-      - uid: gpu-memory
-        title: Память GPU почти кончилась
-        condition: C
-        for: 10m
-        noDataState: OK
-        execErrState: Error
-        annotations:
-          summary: 'Занято {{ with $values.B }}{{ humanizePercentage .Value }}{{ end }} памяти GPU: Ollama начнёт выгружать слои модели на CPU'
-        data:
-          - refId: A
-            relativeTimeRange: { from: 300, to: 0 }
-            datasourceUid: prometheus
-            model:
-              refId: A
-              expr: sum(nvidia_smi_memory_used_bytes) / sum(nvidia_smi_memory_total_bytes)
-              instant: true
-          - *last-value
-          - refId: C
-            datasourceUid: __expr__
-            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 0.95 ] } } ] }
 
       - uid: container-restarts
         title: Контейнер перезапускается

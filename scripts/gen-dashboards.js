@@ -328,11 +328,11 @@ const overview = dashboard({
         }),
         stat({
             title: 'Память GPU занята',
-            description: 'Когда память кончается, Ollama выгружает слои модели на CPU и отвечает в разы медленнее',
+            description: 'Локальная модель Ollama и Whisper, загруженные вместе, занимают 96-98 %: это норма. Ollama не видит память других контейнеров и всегда грузит все слои на GPU',
             gridPos: { x: 20, y: 3, w: 4, h: 4 },
             targets: [prom('sum(nvidia_smi_memory_used_bytes) / sum(nvidia_smi_memory_total_bytes)', 'VRAM')],
             unit: 'percentunit', decimals: 0,
-            thresholds: { mode: 'absolute', steps: [{ color: 'text', value: null }, { color: STATUS.warning, value: 0.85 }, { color: STATUS.critical, value: 0.95 }] },
+            thresholds: { mode: 'absolute', steps: [{ color: 'text', value: null }] },
         }),
 
         row('API сайта (cv-app)', 7),
@@ -701,7 +701,7 @@ const slow = dashboard({
         row('Общие ресурсы', 37),
         timeseries({
             title: 'GPU: загрузка и память',
-            description: 'GPU общий для Ollama, Whisper, Kokoro и эстонского TTS: при загрузке около 100 % запросы ждут друг друга, когда кончается память, Ollama переносит слои модели на CPU',
+            description: 'GPU общий для Ollama, Whisper, Kokoro и эстонского TTS: при загрузке около 100 % запросы ждут друг друга; память, когда загружены и локальная модель Ollama, и Whisper, занята на 96-98 %, это норма',
             gridPos: { x: 0, y: 38, w: 8, h: 8 },
             targets: [
                 prom('avg(nvidia_smi_utilization_gpu_ratio)', 'загрузка'),
