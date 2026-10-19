@@ -148,6 +148,30 @@ groups:
             datasourceUid: __expr__
             model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 20 ] } } ] }
 
+      # requests refused by the limits of CV: 429 in the access log of cv-ui (the chat limits per minute of nginx,
+      # the daily limit of the models and the sign-in limits of cv-app) and the connections over the limit of an
+      # address in nginx for Windows. A person does not reach them: a script does
+      - uid: request-limits
+        title: Срабатывают лимиты запросов
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: '{{ with $values.B }}{{ humanize .Value }}{{ end }} отказов за 15 минут, кто-то шлёт слишком много запросов: {container=~"cv-ui|windows-nginx"} |~ "\" 429 |limiting connections"'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: sum(count_over_time({container=~"cv-ui|windows-nginx"} |~ "\" 429 |limiting connections" [15m]))
+              queryType: instant
+          - *last-value
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 20 ] } } ] }
+
       # errors of the scripts in the browsers of the visitors (ClientErrorHandler of the frontend -> ClientErrorLog)
       - uid: browser-errors
         title: Ошибки в браузерах посетителей

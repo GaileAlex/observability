@@ -60,8 +60,10 @@ host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
   the router. The start and the end of a proxy check are marked on those graphs (its connections go out too).
 - **Alerts** (`grafana/provisioning/alerting`): a service or the site does not answer, 5xx responses, many errors in
   the logs, a container restarting, the certificate expires in less than 14 days, password
-  guessing (more than 20 wrong passwords in 15 minutes), errors in the browsers of the visitors, no backup of the
-  database for a day. Grafana reads these files only at start: `docker compose restart grafana` after a change.
+  guessing (more than 20 wrong passwords in 15 minutes), requests refused by the limits of CV (more than 20 in
+  15 minutes: 429 in the access log of cv-ui, connections over the limit of nginx for Windows; see "Request limits"
+  in the README of CV), errors in the browsers of the visitors, no backup of the database for a day. Grafana reads
+  these files only at start: `docker compose restart grafana` after a change.
 
 ## Dashboards
 
