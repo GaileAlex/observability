@@ -474,7 +474,7 @@ overview.annotations.list.push({
 
 // ---------------------------------------------------------------- logs
 // $monitoring is "obs-.*" (the lines of this stack itself are hidden: all its containers are obs-*) or "-" (no container has this name: all shown)
-const SELECTOR = '{container=~"$container", level=~"$level", container!~"$monitoring"} |~ "(?i)$search"';
+const SELECTOR = '{container=~"$container", level=~"$level", container!~"$monitoring"} |~ "(?i)$search" | trace_id=~".*$trace.*"';
 const logsDashboard = dashboard({
     uid: 'gaile-logs',
     title: 'gaile.ee — логи',
@@ -520,7 +520,7 @@ const logsDashboard = dashboard({
         },
         {
             name: 'trace', label: 'traceId', type: 'textbox', query: '',
-            description: 'traceId строки Spring-приложения (серым в конце её первой строки, после имени потока; в деталях строки — trace_id): панель внизу покажет все строки этого запроса во всех приложениях, любого уровня',
+            description: 'traceId строки Spring-приложения (серым в конце её первой строки, после имени потока; в деталях строки — trace_id): фильтрует панели логов и панель внизу (все строки этого запроса во всех приложениях, любого уровня)',
             current: { selected: false, text: '', value: '' },
             options: [{ selected: true, text: '', value: '' }],
         },
