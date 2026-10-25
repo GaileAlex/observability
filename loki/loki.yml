@@ -28,6 +28,8 @@ schema_config:
 
 limits_config:
   retention_period: 90d
+  # the data never goes back further than the retention, so a long range in Grafana is no reason to refuse the query
+  max_query_length: 0
   # the first start takes the logs the containers still have: up to a week back
   reject_old_samples: true
   reject_old_samples_max_age: 168h
