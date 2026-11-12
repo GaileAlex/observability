@@ -150,7 +150,10 @@ groups:
 
       # requests refused by the limits of CV: 429 in the access log of cv-ui (the chat limits per minute of nginx,
       # the daily limit of the models and the sign-in limits of cv-app) and the connections over the limit of an
-      # address in nginx for Windows. A person does not reach them: a script does
+      # address in nginx for Windows. A person does not reach them: a script does. Counted per client address (the
+      # first field of the access line of cv-ui, "client: ..." of nginx for Windows), so the e-mail names it. nginx for
+      # Windows passes the connections through without reading them: its lines carry no path, the access log of cv-ui
+      # has the paths of the same address
       - uid: request-limits
         title: Срабатывают лимиты запросов
         condition: C
@@ -158,14 +161,14 @@ groups:
         noDataState: OK
         execErrState: Error
         annotations:
-          summary: '{{ with $values.B }}{{ humanize .Value }}{{ end }} отказов за 15 минут, кто-то шлёт слишком много запросов: {container=~"cv-ui|windows-nginx"} |~ "\" 429 |limiting connections"'
+          summary: 'Адрес {{ $labels.address }}: {{ with $values.B }}{{ humanize .Value }}{{ end }} отказов за 15 минут. Его запросы с путями: {container="cv-ui"} |= "{{ $labels.address }}"; отказы: {container=~"cv-ui|windows-nginx"} |~ "\" 429 |limiting connections" |= "{{ $labels.address }}"'
         data:
           - refId: A
             relativeTimeRange: { from: 900, to: 0 }
             datasourceUid: loki
             model:
               refId: A
-              expr: sum(count_over_time({container=~"cv-ui|windows-nginx"} |~ "\" 429 |limiting connections" [15m]))
+              expr: 'sum by (address) (count_over_time({container=~"cv-ui|windows-nginx"} |~ "\" 429 |limiting connections" | regexp `client: (?P<address>[^,]+),` | regexp `^(?P<address>[0-9a-fA-F.:]+) - ` [15m]))'
               queryType: instant
           - *last-value
           - refId: C
