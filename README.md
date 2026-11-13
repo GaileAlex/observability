@@ -61,8 +61,8 @@ host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
 - **Alerts** (`grafana/provisioning/alerting`): a service or the site does not answer, 5xx responses, many errors in
   the logs, a container restarting, the certificate expires in less than 14 days, password
   guessing (more than 20 wrong passwords in 15 minutes), requests refused by the limits of CV (more than 20 to one
-  address in 15 minutes: 429 in the access log of cv-ui, connections over the limit of nginx for Windows; the e-mail
-  names the address; see "Request limits" in the README of CV), errors in the browsers of the visitors, no backup of the database for a day. Grafana reads
+  address in 15 minutes: 429 in the access log of cv-ui; the connections cut by the limit of nginx for Windows are
+  not counted, they come from mass scanners; the e-mail names the address; see "Request limits" in the README of CV), errors in the browsers of the visitors, no backup of the database for a day. Grafana reads
   these files only at start: `docker compose restart grafana` after a change.
 
 ## Dashboards

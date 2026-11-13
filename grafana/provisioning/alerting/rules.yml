@@ -149,11 +149,13 @@ groups:
             model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 20 ] } } ] }
 
       # requests refused by the limits of CV: 429 in the access log of cv-ui (the chat limits per minute of nginx,
-      # the daily limit of the models and the sign-in limits of cv-app) and the connections over the limit of an
-      # address in nginx for Windows. A person does not reach them: a script does. Counted per client address (the
-      # first field of the access line of cv-ui, "client: ..." of nginx for Windows), so the e-mail names it. nginx for
-      # Windows passes the connections through without reading them: its lines carry no path, the access log of cv-ui
-      # has the paths of the same address
+      # the daily limit of the models and the sign-in limits of cv-app). A person does not reach them: a script does.
+      # Counted per client address (the first field of the access line of cv-ui), so the e-mail names it.
+      # The connections over the limit of an address in nginx for Windows ("limiting connections") are not counted:
+      # mass scanners looking for /.env, /.aws/credentials or the /cgi-bin of routers open dozens of connections at
+      # once, the limit cuts them and they get only 301/404, there is nothing to do. Counted, they fired this alert
+      # 4 times on 2026-11-12/13 (22 to 235 refusals) while cv-ui had no 429 at all in those 3 days. Their lines
+      # stay in the logs (container windows-nginx)
       - uid: request-limits
         title: Срабатывают лимиты запросов
         condition: C
@@ -161,14 +163,14 @@ groups:
         noDataState: OK
         execErrState: Error
         annotations:
-          summary: 'Адрес {{ $labels.address }}: {{ with $values.B }}{{ humanize .Value }}{{ end }} отказов за 15 минут. Его запросы с путями: {container="cv-ui"} |= "{{ $labels.address }}"; отказы: {container=~"cv-ui|windows-nginx"} |~ "\" 429 |limiting connections" |= "{{ $labels.address }}"'
+          summary: 'Адрес {{ $labels.address }}: {{ with $values.B }}{{ humanize .Value }}{{ end }} ответов 429 за 15 минут. Его запросы с путями: {container="cv-ui"} |= "{{ $labels.address }}"; отказы: {container="cv-ui"} |= "\" 429 " |= "{{ $labels.address }}"'
         data:
           - refId: A
             relativeTimeRange: { from: 900, to: 0 }
             datasourceUid: loki
             model:
               refId: A
-              expr: 'sum by (address) (count_over_time({container=~"cv-ui|windows-nginx"} |~ "\" 429 |limiting connections" | regexp `client: (?P<address>[^,]+),` | regexp `^(?P<address>[0-9a-fA-F.:]+) - ` [15m]))'
+              expr: 'sum by (address) (count_over_time({container="cv-ui"} |= "\" 429 " | regexp `^(?P<address>[0-9a-fA-F.:]+) - ` [15m]))'
               queryType: instant
           - *last-value
           - refId: C
