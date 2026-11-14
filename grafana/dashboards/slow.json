@@ -532,7 +532,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "estonian-tts-spring-app-1"
+              "options": "estonian-tts-supertonic-1"
             },
             "properties": [
               {

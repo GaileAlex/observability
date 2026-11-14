@@ -49,7 +49,7 @@ host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
   - `{container="cv-postgres"} | duration_ms > 1000` - SQL statements slower than 1 s (PostgreSQL logs those over
     500 ms, see docker-compose.yml of CV)
   - `{level="error", container!~"obs-.*"}` - the errors of the applications
-- **Metrics** (`prometheus/prometheus.yml`): the Spring applications (cv-app, cv-whisper-app, estonian-tts-spring-app)
+- **Metrics** (`prometheus/prometheus.yml`): the Spring applications (cv-app, cv-whisper-app)
   expose `/actuator/prometheus` on the management port 8081, not published: HTTP requests with histograms,
   the calls of Ollama / Whisper / TTS made by cv-app (`http_client_requests` by host), JVM, Hikari, `@Scheduled`
   tasks. RabbitMQ of the Estonian TTS has its own plugin. Kokoro, the Whisper service and Ollama have no metrics

@@ -11,7 +11,6 @@ scrape_configs:
       - targets:
           - cv-app:8081
           - cv-whisper-app:8081
-          - estonian-tts-spring-app-1:8081
     relabel_configs:
       # instance = the container name, as in the probes below
       - source_labels: [ __address__ ]
@@ -90,10 +89,17 @@ scrape_configs:
     static_configs:
       - targets: [ obs-gpu-exporter:9835 ]
 
-  # the queue of the Estonian TTS (the rabbitmq_prometheus plugin is on in the image)
-  - job_name: rabbitmq
+  # the Estonian TTS (Supertonic of the project estonian-tts, Python): its requests as http_server_requests_seconds,
+  # named and labelled like the metric of the Spring applications. Its TartuNLP fallback is not scraped; with it back,
+  # back go estonian-tts-spring-app-1:8081 in the job spring and the job rabbitmq (estonian-tts-rabbitmq-1:15692)
+  - job_name: estonian-tts
+    metrics_path: /metrics
     static_configs:
-      - targets: [ estonian-tts-rabbitmq-1:15692 ]
+      - targets: [ estonian-tts-supertonic-1:8380 ]
+    relabel_configs:
+      - source_labels: [ __address__ ]
+        regex: ([^:]+):\d+
+        target_label: instance
 
   # the monitoring itself
   - job_name: observability
