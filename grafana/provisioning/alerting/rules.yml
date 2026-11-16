@@ -221,3 +221,27 @@ groups:
           - refId: C
             datasourceUid: __expr__
             model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: gt, params: [ 0 ] } } ] }
+
+      # estonian-tts falls back to the CPU by itself when CUDA does not start (an update of Docker Desktop or of the
+      # driver, 2026-11-06): the voice still works, 7-8 times slower (an answer 0.25 s -> 1.9 s). A stopped service is
+      # the alert service-down, here no data is OK
+      - uid: estonian-tts-on-cpu
+        title: Эстонский голос на CPU
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'estonian-tts синтезирует на CPU: CUDA не запустилась, голос в 7-8 раз медленнее. docker compose up -d --force-recreate supertonic в estonian-tts; после обновления Docker сначала wsl --shutdown'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: estonian_tts_on_gpu
+              instant: true
+          - *last-value
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: B, conditions: [ { evaluator: { type: lt, params: [ 1 ] } } ] }
