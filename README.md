@@ -39,9 +39,10 @@ host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
   `com.docker.compose.oneoff=False`). The throwaway containers of the checks and the experiments are not collected,
   neither their logs nor their CPU and memory: a plain `docker run` (`cv-*-check`, `cv-*-stand`, the random names
   like `brave_diffie`; also of an image built by Compose, which passes its project and service labels on), a
-  `docker compose run` (one-off: `whisper-test`, `whisper-bench`), the containers of Testcontainers. Kept, they filled the list of the
-  containers over a long range with hundreds of names and fired the alert on the errors in the logs. A new
-  service is collected once it is in a `docker-compose.yml`
+  `docker compose run` (one-off: `whisper-test`, `whisper-bench`), the containers of Testcontainers. Kept, they
+  filled the list of the containers over a long range with hundreds of names and fired the alert on the errors in
+  the logs. A new service is collected once it is in a `docker-compose.yml`. What was collected before 2026-11-20
+  was deleted (see [Deleting stored data](#deleting-stored-data))
 - **Logs** (`alloy/config.alloy`): every such container, with the labels `container`, `project`, `service`, `stream`,
   `level` (error / warn / info), and the error log of nginx for Windows as `container="windows-nginx"`. The level is
   parsed from the Spring Boot, nginx, Python, Go (logfmt), RabbitMQ and PostgreSQL formats; a Java stack trace and
@@ -91,6 +92,24 @@ The stars and the bookmarks of the menu are preferences of the user `admin` (the
 provisioned. A dashboard can be bookmarked only while it is starred, and by the URL the menu gives it: the menu
 drops the Cyrillic of the slug (`/d/gaile-slow/gaileee-`, not the `url` of `/api/search`), so a bookmark set through
 `PATCH /api/user/preferences` with another URL is silently not shown.
+
+## Deleting stored data
+
+Both keep 90 days; to drop the data of some containers before that (as was done on 2026-11-20 for the throwaway
+ones), with a selector of the containers, e.g. `{container=~".+", container!~"cv-app|cv-ui|..."}`:
+
+- **Loki**: `POST /loki/api/v1/delete?query=<selector>&start=<unix>&end=<unix>` (from inside the network, e.g.
+  `docker exec obs-grafana wget -qO- --post-data= "http://obs-loki:3100/loki/api/v1/delete?..."`). The compactor
+  carries it out only 24 h later (the time to cancel it): to have it in minutes, start Loki for that while with
+  `-compactor.delete-request-cancel-period=1m -compactor.compaction-interval=1m` added to its `command` (an
+  override file, `docker compose -f docker-compose.yml -f <override> up -d loki`), wait for `"status":"processed"`
+  in `GET /loki/api/v1/delete`, then `docker compose up -d loki`. The names of the deleted streams stay in the
+  label index until the retention drops its tables: a list of label values without a stream selector still shows
+  them, so the variable "Контейнер" asks `label_values({container=~".+"},container)`
+- **Prometheus**: the admin API, off by default: the same way, `--web.enable-admin-api` in an override, then
+  `POST /api/v1/admin/tsdb/delete_series?match[]={job="cadvisor",name=~".+",name!~"..."}` and
+  `POST /api/v1/admin/tsdb/clean_tombstones`, then `docker compose up -d prometheus`. `name=~".+"` keeps `up` and
+  the other series of the scrape itself, which have no `name`
 
 ## Versions
 

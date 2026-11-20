@@ -46,7 +46,7 @@ const CLIENTS = [
     ['cv-ollama', 'LLM локально (GPU)'],
     ['cv-whisper-app', 'Whisper'],
     ['kokoro-tts', 'TTS английский (Kokoro)'],
-    ['estonian-tts-spring-app-1', 'TTS эстонский'],
+    ['estonian-tts-supertonic-1', 'TTS эстонский'],
     ['cv-ollama-cpu', 'Ollama CPU (эмбеддинги)'],
 ];
 const CLIENT_OVERRIDES = CLIENTS.map(([host, name], i) => seriesOverride(host, SLOT[i], name));
@@ -278,7 +278,7 @@ const overview = dashboard({
             title: 'Сервисы',
             description: 'Spring-приложения и RabbitMQ — отдают ли метрики (up); Kokoro, Whisper-сервис, Ollama и сам сайт gaile.ee (как его открывает посетитель: роутер, nginx для Windows, cv-ui) — отвечают ли на проверку blackbox exporter (probe_success)',
             gridPos: { x: 0, y: 0, w: 20, h: 3 },
-            targets: [prom('sort(up{job=~"spring|rabbitmq"} or probe_success{job!="probe-internet"})', '{{instance}}', { instant: true, range: false })],
+            targets: [prom('sort(up{job=~"spring|rabbitmq|estonian-tts"} or probe_success{job!="probe-internet"})', '{{instance}}', { instant: true, range: false })],
             graph: false,
             mappings: [{ type: 'value', options: { '0': { text: 'не отвечает', index: 0 }, '1': { text: 'работает', index: 1 } } }],
             thresholds: { mode: 'absolute', steps: [{ color: STATUS.critical, value: null }, { color: STATUS.good, value: 1 }] },
@@ -483,10 +483,12 @@ const logsDashboard = dashboard({
     time: 'now-6h',
     refresh: '',
     templating: [
+        // the containers with lines in the time range: without a stream selector Loki lists every name its index
+        // tables ever held, also of the streams deleted through /loki/api/v1/delete (until the retention drops the table)
         {
             name: 'container', label: 'Контейнер', type: 'query', datasource: LOKI,
-            query: { label: 'container', refId: 'LokiVariableQueryEditor-VariableQuery', stream: '', type: 1 },
-            definition: 'label_values(container)',
+            query: { label: 'container', refId: 'LokiVariableQueryEditor-VariableQuery', stream: '{container=~".+"}', type: 1 },
+            definition: 'label_values({container=~".+"},container)',
             includeAll: true, allValue: '.+', multi: true, refresh: 2, sort: 1,
             current: { selected: true, text: ['All'], value: ['$__all'] },
         },

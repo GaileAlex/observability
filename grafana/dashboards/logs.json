@@ -28,10 +28,10 @@
         "query": {
           "label": "container",
           "refId": "LokiVariableQueryEditor-VariableQuery",
-          "stream": "",
+          "stream": "{container=~\".+\"}",
           "type": 1
         },
-        "definition": "label_values(container)",
+        "definition": "label_values({container=~\".+\"},container)",
         "includeAll": true,
         "allValue": ".+",
         "multi": true,
