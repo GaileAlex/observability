@@ -17,16 +17,13 @@ discovery.relabel "containers" {
 
   // only the services of the Compose projects (docker compose up): the throwaway containers of the checks and
   // the experiments are not collected, they would fill the list of the containers and fire the alerts.
-  // A plain docker run has no project; docker compose run (whisper-test, ...) is marked one-off
-  rule {
-    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
-    regex         = ""
-    action        = "drop"
-  }
+  // Compose marks every container it creates with oneoff, True for docker compose run (whisper-test, ...).
+  // The project is no sign: a docker run of an image built by Compose inherits its project and service labels
+  // (jovial_rubin of estonian-tts-supertonic), only oneoff it has not
   rule {
     source_labels = ["__meta_docker_container_label_com_docker_compose_oneoff"]
-    regex         = "True"
-    action        = "drop"
+    regex         = "False"
+    action        = "keep"
   }
   // the containers of the integration tests (Testcontainers), also when they come up through Compose
   rule {

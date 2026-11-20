@@ -35,10 +35,11 @@ host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
 
 ## What is collected
 
-- **Which containers**: only the services of the Compose projects, started by `docker compose up`. The throwaway
-  containers of the checks and the experiments are not collected, neither their logs nor their CPU and memory:
-  a plain `docker run` (`cv-*-check`, `cv-*-stand`, the random names like `brave_diffie`), a `docker compose run`
-  (one-off: `whisper-test`, `whisper-bench`), the containers of Testcontainers. Kept, they filled the list of the
+- **Which containers**: only the services of the Compose projects, started by `docker compose up` (the label
+  `com.docker.compose.oneoff=False`). The throwaway containers of the checks and the experiments are not collected,
+  neither their logs nor their CPU and memory: a plain `docker run` (`cv-*-check`, `cv-*-stand`, the random names
+  like `brave_diffie`; also of an image built by Compose, which passes its project and service labels on), a
+  `docker compose run` (one-off: `whisper-test`, `whisper-bench`), the containers of Testcontainers. Kept, they filled the list of the
   containers over a long range with hundreds of names and fired the alert on the errors in the logs. A new
   service is collected once it is in a `docker-compose.yml`
 - **Logs** (`alloy/config.alloy`): every such container, with the labels `container`, `project`, `service`, `stream`,

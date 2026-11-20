@@ -73,15 +73,12 @@ scrape_configs:
     static_configs:
       - targets: [ obs-cadvisor:8080 ]
     metric_relabel_configs:
-      # only the services of the Compose projects (docker compose up), as the logs in alloy/config.alloy: not the
-      # throwaway containers of the checks (a plain docker run has no project, docker compose run is one-off),
-      # not Testcontainers, not the cgroups of the Docker Desktop VM (no project, no name either)
-      - source_labels: [ container_label_com_docker_compose_project ]
-        regex: ""
-        action: drop
+      # only the services of the Compose projects (docker compose up, oneoff False), as the logs in
+      # alloy/config.alloy: not the throwaway containers of the checks (docker run, docker compose run),
+      # not Testcontainers, not the cgroups of the Docker Desktop VM (no labels, no name either)
       - source_labels: [ container_label_com_docker_compose_oneoff ]
-        regex: "True"
-        action: drop
+        regex: "False"
+        action: keep
       - source_labels: [ container_label_org_testcontainers ]
         regex: "true"
         action: drop
