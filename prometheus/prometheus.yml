@@ -73,15 +73,23 @@ scrape_configs:
     static_configs:
       - targets: [ obs-cadvisor:8080 ]
     metric_relabel_configs:
-      # only the containers: cAdvisor also reports every cgroup of the Docker Desktop VM (without a name)
-      - source_labels: [ name ]
+      # only the services of the Compose projects (docker compose up), as the logs in alloy/config.alloy: not the
+      # throwaway containers of the checks (a plain docker run has no project, docker compose run is one-off),
+      # not Testcontainers, not the cgroups of the Docker Desktop VM (no project, no name either)
+      - source_labels: [ container_label_com_docker_compose_project ]
         regex: ""
+        action: drop
+      - source_labels: [ container_label_com_docker_compose_oneoff ]
+        regex: "True"
+        action: drop
+      - source_labels: [ container_label_org_testcontainers ]
+        regex: "true"
         action: drop
       - source_labels: [ container_label_com_docker_compose_project ]
         target_label: project
       - source_labels: [ container_label_com_docker_compose_service ]
         target_label: service
-      - regex: container_label_com_docker_compose_(project|service)|id
+      - regex: container_label_(com_docker_compose_(project|service|oneoff)|org_testcontainers)|id
         action: labeldrop
 
   - job_name: gpu

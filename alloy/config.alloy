@@ -1,4 +1,4 @@
-// The logs of every container of this Docker host go to Loki.
+// The logs of every Compose service of this Docker host go to Loki (not the throwaway containers, see below).
 // Labels (Loki indexes them, so each has few values): container, project, service, stream, level.
 // level is one of error / warn / info (debug lines are dropped); a line without a recognizable level gets none,
 // Loki then guesses detected_level itself.
@@ -15,7 +15,20 @@ discovery.docker "containers" {
 discovery.relabel "containers" {
   targets = []
 
-  // the throwaway containers of the integration tests (Testcontainers)
+  // only the services of the Compose projects (docker compose up): the throwaway containers of the checks and
+  // the experiments are not collected, they would fill the list of the containers and fire the alerts.
+  // A plain docker run has no project; docker compose run (whisper-test, ...) is marked one-off
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = ""
+    action        = "drop"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_oneoff"]
+    regex         = "True"
+    action        = "drop"
+  }
+  // the containers of the integration tests (Testcontainers), also when they come up through Compose
   rule {
     source_labels = ["__meta_docker_container_label_org_testcontainers"]
     regex         = "true"

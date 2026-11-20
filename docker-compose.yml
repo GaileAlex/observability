@@ -1,6 +1,7 @@
-# Logs and metrics of every container of this host (CV, Whisper, Estonian TTS, Kokoro, Ollama) in one Grafana:
+# Logs and metrics of every Compose service of this host (CV, Whisper, Estonian TTS, Kokoro, Ollama) in one Grafana:
 #   docker compose up -d        ->  http://127.0.0.1:3000 (the password is in .env, see .env.example)
-# Alloy reads the logs of all containers through the Docker API and sends them to Loki; Prometheus scrapes
+# Alloy reads the logs of the containers (not the throwaway ones, see alloy/config.alloy) through the Docker API
+# and sends them to Loki; Prometheus scrapes
 # the Actuator of the Spring applications, cAdvisor (CPU/memory of the containers) and the GPU exporter,
 # the blackbox exporter checks that Kokoro, the Whisper service and Ollama answer.
 # Everything is free and local: nothing leaves the machine, only Grafana is published and only on 127.0.0.1.
@@ -76,7 +77,7 @@ services:
       - --docker_only=true
       - --housekeeping_interval=15s
       - --store_container_labels=false
-      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service,com.docker.compose.oneoff,org.testcontainers
       - --disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process,hugetlb,referenced_memory,cpu_topology,resctrl,cpuset,advtcp,memory_numa
     volumes:
       - /:/rootfs:ro

@@ -1,6 +1,6 @@
 # observability
 
-Logs and metrics of every container on the host of [gaile.ee](https://gaile.ee) in one Grafana:
+Logs and metrics of every Compose service on the host of [gaile.ee](https://gaile.ee) in one Grafana:
 [CV](https://github.com/GaileAlex/cv), [Whisper](https://github.com/GaileAlex/Whisper-Speech-to-Text),
 [Estonian TTS](https://github.com/GaileAlex/Estonian-Text-to-Speech),
 [Kokoro](https://github.com/GaileAlex/Kokoro-FastAPI), Ollama.
@@ -10,7 +10,7 @@ All parts are free and self-hosted; nothing is sent outside, only Grafana is pub
 |---|---|---|
 | Grafana | 13.2 | dashboards, alerts by e-mail |
 | Loki | 3.7 | logs, kept 90 days |
-| Alloy | 1.20 | reads the logs of all containers through the Docker API |
+| Alloy | 1.20 | reads the logs of the containers through the Docker API |
 | Prometheus | 3.15 | metrics, kept 90 days |
 | cAdvisor | 0.60 | CPU and memory of the containers |
 | nvidia_gpu_exporter | 1.15 | load, memory, temperature of the GPU (nvidia-smi) |
@@ -35,7 +35,13 @@ host: `C:/nginx/logs`, or `WINDOWS_NGINX_LOGS` in `.env`.
 
 ## What is collected
 
-- **Logs** (`alloy/config.alloy`): every container, with the labels `container`, `project`, `service`, `stream`,
+- **Which containers**: only the services of the Compose projects, started by `docker compose up`. The throwaway
+  containers of the checks and the experiments are not collected, neither their logs nor their CPU and memory:
+  a plain `docker run` (`cv-*-check`, `cv-*-stand`, the random names like `brave_diffie`), a `docker compose run`
+  (one-off: `whisper-test`, `whisper-bench`), the containers of Testcontainers. Kept, they filled the list of the
+  containers over a long range with hundreds of names and fired the alert on the errors in the logs. A new
+  service is collected once it is in a `docker-compose.yml`
+- **Logs** (`alloy/config.alloy`): every such container, with the labels `container`, `project`, `service`, `stream`,
   `level` (error / warn / info), and the error log of nginx for Windows as `container="windows-nginx"`. The level is
   parsed from the Spring Boot, nginx, Python, Go (logfmt), RabbitMQ and PostgreSQL formats; a Java stack trace and
   a multi-line SQL statement stay one entry. Debug lines, static files served by nginx, the probes and other noise
